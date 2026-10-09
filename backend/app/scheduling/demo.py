@@ -36,5 +36,5 @@ def build_demo_problem() -> Problem:
         RequiredSession("EXT-ECE", offering + 2, 0, "ECE-EE", "theory", 1, 60, (12,), ("S3A",), (1,), fixed_day="Thursday", fixed_period=2, fixed_room_id=1),
     ])
     reservations = [ResourceReservation("Monday", (0, 1), room_id=4, description="Existing first-year Power Electronics Lab")]
-    return Problem(days, periods, {(d, 3) for d in days}, rooms, faculty, sessions, reservations, {"preference": 3, "late": 1, "same_day": 4, "student_gaps": 5, "faculty_gaps": 3})
+    return Problem(days, periods, {(d, 3) for d in days}, rooms, faculty, sessions, reservations, {"preference": 3, "late": 4, "same_day": 4, "student_gaps": 100, "faculty_gaps": 5, "late_student_periods": 12, "isolated_student_days": 10})
 

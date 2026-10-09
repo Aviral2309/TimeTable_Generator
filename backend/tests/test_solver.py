@@ -49,6 +49,16 @@ def test_parallel_electives_and_enrollment_sized_rooms():
     assert problem.rooms[elective["ELEC-PS"].room_id].capacity >= 40
 
 
+def test_validator_rejects_parallel_electives_at_different_times():
+    problem, result, _ = solved_demo()
+    damaged = list(result.assignments)
+    index = next(i for i, a in enumerate(damaged) if a.session_id == "ELEC-PS")
+    damaged[index] = replace(damaged[index], day="Friday" if damaged[index].day != "Friday" else "Monday")
+    valid, errors, _ = validate_schedule(problem, damaged)
+    assert not valid
+    assert any(e["code"] == "parallel_elective_mismatch" for e in errors)
+
+
 def test_home_rooms_and_fixed_external_lecture():
     _, result, _ = solved_demo()
     expected = {"EE30": 1, "EE50": 2, "EE70": 3}

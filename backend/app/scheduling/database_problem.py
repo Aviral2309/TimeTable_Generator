@@ -39,5 +39,5 @@ def build_database_problem(db: Session, academic_year_id: int, semester_ids: lis
             parallel_key = f"{offering.elective_group}-{occurrence}" if offering.parallel_elective else None
             sessions.append(RequiredSession(f"offering-{offering.id}-{occurrence+1}", offering.id, occurrence, offering.code, "lab" if offering.kind == "lab" else "theory", offering.duration_periods, offering.enrollment, tuple(offering.faculty_ids), groups, eligible, frozenset(offering.required_features or []), preferred, offering.fixed_day, offering.fixed_period, offering.fixed_room_id, parallel_key))
     reservations = [ResourceReservation(r.day, tuple(range(r.start_period, r.start_period + r.duration_periods)), r.room_id, r.faculty_id, r.participant_group_id, r.description) for r in db.scalars(select(FixedReservation).where(FixedReservation.academic_year_id == academic_year_id)).all()]
-    return Problem(days, periods, blocked, rooms, faculty, sessions, reservations, {"preference": 12, "late": 2, "same_day": 8, "student_gaps": 30, "faculty_gaps": 5})
+    return Problem(days, periods, blocked, rooms, faculty, sessions, reservations, {"preference": 12, "late": 4, "same_day": 8, "student_gaps": 100, "faculty_gaps": 5, "late_student_periods": 12, "isolated_student_days": 10})
 

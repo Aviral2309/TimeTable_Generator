@@ -55,6 +55,14 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
                 errors.append({"code": "reservation_conflict", "resource_type": kind, "resource": key[0], "day": key[1], "period": key[2], "message": "Assignment conflicts with a fixed reservation."})
     for (f, day), load in faculty_daily.items():
         if load > problem.faculty[f].daily_limit: errors.append({"code": "faculty_daily_limit", "faculty_id": f, "day": day, "message": "Faculty daily workload limit exceeded."})
+    assignment_by_session = {a.session_id: a for a in assignments}
+    parallel_groups = defaultdict(list)
+    for session in problem.sessions:
+        if session.parallel_key: parallel_groups[session.parallel_key].append(session.id)
+    for key, session_ids in parallel_groups.items():
+        placements = {(assignment_by_session[sid].day, assignment_by_session[sid].start_period) for sid in session_ids if sid in assignment_by_session}
+        if len(placements) > 1:
+            errors.append({"code": "parallel_elective_mismatch", "parallel_group": key, "sessions": session_ids, "message": "All alternatives in a parallel elective group must start at the same time."})
     metrics = calculate_metrics(problem, assignments)
     return not errors, errors, metrics
 
@@ -75,5 +83,9 @@ def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
             total += len(valid_between - ps)
         return total
     available = len(problem.days) * (len(problem.periods) - len({p for _, p in problem.blocked_slots})) * max(1, len(problem.rooms))
-    return {"student_gaps": gaps(by_group_day), "faculty_gaps": gaps(by_faculty_day), "room_utilization": round(used_room_periods / available, 4), "scheduled_sessions": len(assignments)}
+    student_gaps = gaps(by_group_day)
+    faculty_gaps = gaps(by_faculty_day)
+    late_student_periods = sum(sum(p >= 6 for p in periods) for periods in by_group_day.values())
+    isolated_student_days = sum(len(periods) == 1 for periods in by_group_day.values())
+    return {"student_gaps": student_gaps, "faculty_gaps": faculty_gaps, "late_student_periods": late_student_periods, "isolated_student_days": isolated_student_days, "room_utilization": round(used_room_periods / available, 4), "scheduled_sessions": len(assignments)}
 

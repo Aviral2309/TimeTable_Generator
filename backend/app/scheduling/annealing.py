@@ -9,7 +9,12 @@ from app.scheduling.validator import calculate_metrics, validate_schedule
 
 def soft_cost(problem: Problem, schedule: list[Assignment]) -> float:
     metrics = calculate_metrics(problem, schedule)
-    return metrics["student_gaps"] * problem.weights.get("student_gaps", 5) + metrics["faculty_gaps"] * problem.weights.get("faculty_gaps", 3)
+    return (
+        metrics["student_gaps"] * problem.weights.get("student_gaps", 100)
+        + metrics["faculty_gaps"] * problem.weights.get("faculty_gaps", 5)
+        + metrics["late_student_periods"] * problem.weights.get("late_student_periods", 10)
+        + metrics["isolated_student_days"] * problem.weights.get("isolated_student_days", 8)
+    )
 
 
 def refine(problem: Problem, initial: list[Assignment], iterations: int = 500, seed: int = 42) -> tuple[list[Assignment], dict]:
