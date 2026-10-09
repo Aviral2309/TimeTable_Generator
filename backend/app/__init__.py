@@ -1,0 +1,2 @@
+"""Academic timetable backend."""
+
