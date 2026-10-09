@@ -23,6 +23,18 @@ class RunStatus(StrEnum):
     FAILED = "failed"
 
 
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(150))
+    password_hash: Mapped[str] = mapped_column(String(300))
+    role: Mapped[str] = mapped_column(String(20), index=True)
+    faculty_id: Mapped[int | None] = mapped_column(ForeignKey("faculty.id"), unique=True)
+    student_group_id: Mapped[str | None] = mapped_column(String(80))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class Institute(Base):
     __tablename__ = "institutes"
     id: Mapped[int] = mapped_column(primary_key=True)

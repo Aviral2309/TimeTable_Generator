@@ -1,6 +1,6 @@
 # Intelligent Academic Timetable Management & Optimization System
 
-Phase 1 delivers a working, independently validated scheduling backend for the SGSITS-style department demonstration. It schedules EE Semesters III, V, and VII together while treating faculty, rooms, laboratories, student groups, electives, and imported first-year commitments as shared resources.
+Phase 2 delivers an integrated web application and independently validated scheduling backend for the SGSITS-style department demonstration. It schedules EE Semesters III, V, and VII together while treating faculty, rooms, laboratories, student groups, electives, and imported first-year commitments as shared resources.
 
 ## What works now
 
@@ -23,6 +23,11 @@ Phase 1 delivers a working, independently validated scheduling backend for the S
 - Persisted generation runs, schedules, diagnostics, and validation reports
 - Realistic fictional 15-faculty seed master data
 - Automated solver and API-service workflow tests
+- React 19 and TypeScript responsive administration interface
+- Secure role-based admin, faculty, and student workspaces
+- Guided 12-step timetable preparation experience
+- Browser-based master data forms for faculty, rooms, labs, and reservations
+- Generation controls, hybrid result metrics, weekly timetable filtering, analytics, and CSV download
 
 ## Architecture
 
@@ -56,7 +61,21 @@ python scripts/seed.py
 uvicorn app.main:app --reload
 ```
 
-Open `http://localhost:8000/docs`. Run a complete three-semester demonstration with `POST /api/generation/demo`, then inspect it with `GET /api/generation/runs/{run_id}`.
+Start the frontend in another PowerShell window:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. API documentation remains at `http://localhost:8000/docs`.
+
+Demo accounts all use password `Demo@123`:
+
+- `admin@example.edu`
+- `faculty@example.edu`
+- `student@example.edu`
 
 Run verification:
 
@@ -94,18 +113,17 @@ The seed command writes permanent master data. The `/generation/demo` endpoint c
 
 The API never labels `unknown` as infeasible. A timetable is persisted only after the independent validator confirms every implemented hard constraint.
 
-## Phase 1 checkpoint
+## Phase 2 checkpoint
 
-Implemented: backend structure, database metadata and migration, reusable master/semester entities, fixed reservations, session expansion representation, validation, CP-SAT, initial soft objective, annealing module, persistence service, generation API, seed data, Docker configuration, and automated tests.
+Implemented: the Phase 1 optimization foundation plus signed authentication, password hashing, backend role enforcement, master-data APIs and browser forms, a guided preparation flow, real generation integration, timetable filtering by role/group, analytics, responsive dashboards, and CSV export.
 
 Known limitations for the next phases:
 
-- The browser UI, authentication/RBAC, and general master-data CRUD are Phase 2.
-- The generation endpoint currently exercises the seeded demonstration mapper; arbitrary database configurations will be wired through the preparation wizard in Phase 2.
+- The generation endpoint currently exercises the seeded demonstration mapper. Converting arbitrary database draft configuration into the solver domain remains a hardening item.
 - Direct-move annealing is implemented; CP-SAT neighborhood repair is not yet implemented.
 - Student/faculty gap metrics are measured after solving, but full gap linearization in the CP-SAT objective is deferred to Phase 2.
 - Dynamic rescheduling, immutable publication versions, exports, and change requests are Phase 3.
 - The data model is the Phase 1 operational subset, rather than every final entity listed in the master specification.
 
-See [algorithm documentation](docs/ALGORITHM.md), [Phase 1 report](docs/PHASE_1.md), and [API notes](docs/API.md).
+See [algorithm documentation](docs/ALGORITHM.md), [Phase 1 report](docs/PHASE_1.md), [Phase 2 report](docs/PHASE_2.md), and [API notes](docs/API.md).
 

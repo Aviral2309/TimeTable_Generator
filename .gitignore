@@ -9,4 +9,5 @@ htmlcov/
 *.db
 dist/
 node_modules/
+*.tsbuildinfo
 

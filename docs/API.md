@@ -2,6 +2,24 @@
 
 Interactive OpenAPI documentation is served at `/docs`.
 
+Authenticated endpoints expect `Authorization: Bearer <token>`. Obtain the token from `POST /api/auth/login`. Authorization is enforced in backend dependencies; the UI is not the security boundary.
+
+## Authentication and roles
+
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- Admin: generation, analytics, and master-data writes
+- Faculty: own timetable plus permitted master-data reads
+- Student: published timetable filtered to their participant group
+
+## Master data
+
+- `GET/POST /api/faculty`
+- `GET/POST /api/rooms`
+- `GET/POST /api/reservations`
+
+List endpoints are paginated. Writes require the administrator role.
+
 ## `GET /api/health`
 
 Returns service readiness.
@@ -24,4 +42,10 @@ The response includes the exact solver status, assignments, diagnostics, indepen
 ## `GET /api/generation/runs/{run_id}`
 
 Returns persisted solver metadata and diagnostics for reproducibility.
+
+## Timetable, export, and analytics
+
+- `GET /api/timetables/latest` returns the authoritative scheduled sessions, filtered for faculty and students.
+- `GET /api/export/latest.csv` produces a downloadable schedule from those same records.
+- `GET /api/analytics/summary` returns recent generation statuses and metrics for administrators.
 
