@@ -21,6 +21,15 @@ def candidates_for(problem: Problem, session: RequiredSession):
             continue
         for day in days:
             for start in starts:
+                if session.kind == "lab":
+                    first_start = min(problem.periods)
+                    final_start = max(problem.periods) - session.duration + 1
+                    boundary_starts = {first_start}
+                    final_periods = tuple(final_start + i for i in range(session.duration))
+                    if all(p in problem.periods and (day, p) not in problem.blocked_slots for p in final_periods):
+                        boundary_starts.add(final_start)
+                    if start not in boundary_starts:
+                        continue
                 periods = occupied_periods(problem, session, day, start)
                 if periods is None or any((day, p) in room.unavailable for p in periods):
                     continue
@@ -33,6 +42,9 @@ def validate_problem(problem: Problem) -> list[dict]:
     errors: list[dict] = []
     faculty_load = Counter()
     for session in problem.sessions:
+        if session.kind == "lab" and session.duration != 2:
+            errors.append({"code": "invalid_lab_duration", "session": session.id, "message": f"{session.code} must be exactly two consecutive periods."})
+            continue
         for faculty_id in session.faculty_ids:
             if faculty_id not in problem.faculty:
                 errors.append({"code": "missing_faculty", "session": session.id, "message": f"{session.code} references missing faculty {faculty_id}."})

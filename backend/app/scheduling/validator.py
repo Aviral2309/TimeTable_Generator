@@ -28,6 +28,15 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
             errors.append({"code": "ineligible_room", "session": a.session_id, "message": "Room does not satisfy type, capacity, or equipment requirements."})
         if any(p not in problem.periods or (a.day, p) in problem.blocked_slots for p in periods):
             errors.append({"code": "invalid_period", "session": a.session_id, "message": "Session is outside valid periods or crosses a blocked slot."})
+        if s.kind == "lab":
+            final_start = max(problem.periods) - s.duration + 1
+            final_periods = tuple(final_start + i for i in range(s.duration))
+            allowed_starts = {min(problem.periods)}
+            if all(p in problem.periods and (a.day, p) not in problem.blocked_slots for p in final_periods): allowed_starts.add(final_start)
+            if s.duration != 2:
+                errors.append({"code": "invalid_lab_duration", "session": a.session_id, "message": "Laboratory must occupy exactly two consecutive periods."})
+            if a.start_period not in allowed_starts:
+                errors.append({"code": "lab_not_at_boundary", "session": a.session_id, "message": "Laboratory must be at the start or end of the working day, never between theory classes."})
         if s.fixed_day and (a.day != s.fixed_day or a.start_period != s.fixed_period):
             errors.append({"code": "fixed_session_moved", "session": a.session_id, "message": "Fixed session was not preserved."})
         for p in periods:
@@ -59,7 +68,12 @@ def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
             for g in a.group_ids: by_group_day[g, a.day].add(p)
             for f in a.faculty_ids: by_faculty_day[f, a.day].add(p)
     def gaps(mapping):
-        return sum(max(ps) - min(ps) + 1 - len(ps) for ps in mapping.values() if ps)
+        total = 0
+        for (_, day), ps in mapping.items():
+            if not ps: continue
+            valid_between = {p for p in problem.periods if min(ps) <= p <= max(ps) and (day, p) not in problem.blocked_slots}
+            total += len(valid_between - ps)
+        return total
     available = len(problem.days) * (len(problem.periods) - len({p for _, p in problem.blocked_slots})) * max(1, len(problem.rooms))
     return {"student_gaps": gaps(by_group_day), "faculty_gaps": gaps(by_faculty_day), "room_utilization": round(used_room_periods / available, 4), "scheduled_sessions": len(assignments)}
 

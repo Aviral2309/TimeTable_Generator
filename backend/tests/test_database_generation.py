@@ -38,5 +38,5 @@ def test_database_records_drive_exactly_three_cohort_schedule():
 def test_lab_from_database_is_consecutive_and_cannot_cross_lunch():
     db,year,ids=configured_problem(); problem=build_database_problem(db,year.id,ids); result=solve(problem,10,42)
     lab=next(x for x in result.assignments if x.session_id.startswith("offering-4"))
-    assert lab.duration==2 and lab.start_period not in {2,3}
+    assert lab.duration==2 and lab.start_period == 0
 

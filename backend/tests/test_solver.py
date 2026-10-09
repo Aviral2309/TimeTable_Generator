@@ -37,7 +37,7 @@ def test_first_year_reservation_and_two_hour_labs_and_lunch():
     problem, result, _ = solved_demo()
     labs = [a for a in result.assignments if a.session_id.startswith("EE504")]
     assert len(labs) == 4
-    assert all(a.duration == 2 and a.start_period != 2 for a in labs)
+    assert all(a.duration == 2 and a.start_period in {0, 6} for a in labs)
     assert all(not (a.room_id == 4 and a.day == "Monday" and a.start_period in {0, 1}) for a in labs)
 
 
@@ -88,6 +88,16 @@ def test_lab_has_no_consecutive_window():
     p.blocked_slots = {("Monday", 1), ("Monday", 3)}
     result = solve(p)
     assert result.status == "invalid_input"
+
+
+def test_validator_rejects_a_midday_lab_even_when_consecutive():
+    problem, result, _ = solved_demo()
+    index = next(i for i, a in enumerate(result.assignments) if a.session_id.startswith("EE504"))
+    damaged = list(result.assignments)
+    damaged[index] = replace(damaged[index], day="Tuesday", start_period=4)
+    valid, errors, _ = validate_schedule(problem, damaged)
+    assert not valid
+    assert any(e["code"] == "lab_not_at_boundary" for e in errors)
 
 
 def test_reservation_removes_last_candidate():

@@ -30,8 +30,8 @@ class CourseOfferingCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_kind(self):
-        if self.kind == "lab" and self.duration_periods < 2:
-            raise ValueError("Laboratories must occupy at least two consecutive periods")
+        if self.kind == "lab" and self.duration_periods != 2:
+            raise ValueError("Laboratories must occupy exactly two consecutive periods")
         if self.parallel_elective and not self.elective_group:
             raise ValueError("Parallel electives require an elective group")
         return self

@@ -8,7 +8,7 @@ For required session `s`, eligible room `r`, day `d`, and valid starting period 
 
 `x[s,r,d,t] in {0,1}`
 
-A candidate is omitted if its room is too small or the wrong type, required equipment is missing, any occupied period is blocked/outside the day, the room is unavailable, or a faculty member is unavailable. A duration-two lab candidate owns both `t` and `t+1`; therefore it cannot cross lunch.
+A candidate is omitted if its room is too small or the wrong type, required equipment is missing, any occupied period is blocked/outside the day, the room is unavailable, or a faculty member is unavailable. A laboratory is exactly two consecutive periods and its only eligible starts are the first period or the final valid two-period block of the working day. It therefore cannot cross lunch or sit between theory classes.
 
 Each session is assigned exactly once:
 
@@ -20,7 +20,7 @@ The initial objective minimizes weighted faculty avoidance, unsuitable lab time 
 
 ## Independent validation
 
-The validator reconstructs occupancy from returned assignments without accessing CP-SAT variables. It checks assignment completeness, room eligibility/capacity/equipment, valid consecutive periods, fixed sessions, availability, faculty/room/group collisions, fixed reservations, and daily workload. It also calculates student gaps, faculty gaps, utilization, and session count. Persistence occurs only when this pass succeeds.
+The validator reconstructs occupancy from returned assignments without accessing CP-SAT variables. It checks assignment completeness, room eligibility/capacity/equipment, valid consecutive periods, lab boundary placement, fixed sessions, availability, faculty/room/group collisions, fixed reservations, and daily workload. It calculates student and faculty gaps over teaching periods only, so a configured lunch break is not incorrectly counted as an idle gap. Persistence occurs only when this pass succeeds.
 
 ## Hybrid refinement
 
