@@ -17,12 +17,16 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
             if r.faculty_id: reservation_occupancy["faculty"].add((r.faculty_id, r.day, p))
             if r.group_id: reservation_occupancy["group"].add((r.group_id, r.day, p))
     faculty_daily = Counter()
+    offering_days = Counter()
+    cohort_regular = set()
+    cohort_elective = set()
     for a in assignments:
         s = sessions.get(a.session_id)
         if not s:
             errors.append({"code": "unknown_session", "session": a.session_id, "message": "Assignment references unknown session."})
             continue
         room = problem.rooms.get(a.room_id)
+        offering_days[a.offering_id, a.day] += 1
         periods = range(a.start_period, a.start_period + a.duration)
         if not room or room.capacity < s.enrollment or (s.kind == "lab" and room.kind != "lab") or not s.required_features.issubset(room.features):
             errors.append({"code": "ineligible_room", "session": a.session_id, "message": "Room does not satisfy type, capacity, or equipment requirements."})
@@ -46,6 +50,9 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
                 faculty_daily[f, a.day] += 1
                 if (a.day, p) in problem.faculty[f].unavailable: errors.append({"code": "faculty_unavailable", "session": a.session_id, "message": f"Faculty {f} is unavailable."})
             for g in a.group_ids: occupancy["group"][g, a.day, p].append(a.session_id)
+            if s.cohort_id:
+                target = cohort_elective if s.is_elective else cohort_regular
+                target.add((s.cohort_id, a.day, p))
     for kind, resources in occupancy.items():
         for key, ids in resources.items():
             capacity = problem.rooms[key[0]].concurrent_capacity if kind == "room" else 1
@@ -55,6 +62,11 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
                 errors.append({"code": "reservation_conflict", "resource_type": kind, "resource": key[0], "day": key[1], "period": key[2], "message": "Assignment conflicts with a fixed reservation."})
     for (f, day), load in faculty_daily.items():
         if load > problem.faculty[f].daily_limit: errors.append({"code": "faculty_daily_limit", "faculty_id": f, "day": day, "message": "Faculty daily workload limit exceeded."})
+    for (offering_id, day), count in offering_days.items():
+        if count > 1:
+            errors.append({"code": "same_subject_repeated", "offering_id": offering_id, "day": day, "message": "The same subject cannot have more than one class on the same day."})
+    for cohort_id, day, period in sorted(cohort_regular & cohort_elective):
+        errors.append({"code": "cohort_elective_conflict", "cohort": cohort_id, "day": day, "period": period, "message": "A full-cohort class cannot overlap that cohort's elective block."})
     assignment_by_session = {a.session_id: a for a in assignments}
     parallel_groups = defaultdict(list)
     for session in problem.sessions:

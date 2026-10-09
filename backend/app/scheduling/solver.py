@@ -22,6 +22,7 @@ def solve(problem: Problem, time_limit: float = 30, random_seed: int = 42) -> So
     variables = {}
     candidate_map = {}
     by_room_slot, by_faculty_slot, by_group_slot = defaultdict(list), defaultdict(list), defaultdict(list)
+    by_cohort_regular_slot, by_cohort_elective_slot = defaultdict(list), defaultdict(list)
     by_faculty_day = defaultdict(list)
     by_offering_day = defaultdict(list)
     start_by_session_day = defaultdict(list)
@@ -44,6 +45,9 @@ def solve(problem: Problem, time_limit: float = 30, random_seed: int = 42) -> So
                 by_room_slot[room_id, day, p].append(var)
                 for f in session.faculty_ids: by_faculty_slot[f, day, p].append(var)
                 for g in session.group_ids: by_group_slot[g, day, p].append(var)
+                if session.cohort_id:
+                    target = by_cohort_elective_slot if session.is_elective else by_cohort_regular_slot
+                    target[session.cohort_id, day, p].append(var)
             for f in session.faculty_ids: by_faculty_day[f, day].append((var, len(periods)))
             by_offering_day[session.offering_id, day].append(var)
             start_by_session_day[session.id, day].append(var)
@@ -63,13 +67,17 @@ def solve(problem: Problem, time_limit: float = 30, random_seed: int = 42) -> So
     for (room_id, _, _), vs in by_room_slot.items(): model.add(sum(vs) <= problem.rooms[room_id].concurrent_capacity)
     for vs in by_faculty_slot.values(): model.add_at_most_one(vs)
     for vs in by_group_slot.values(): model.add_at_most_one(vs)
+    for key, elective_vars in by_cohort_elective_slot.items():
+        regular_vars = by_cohort_regular_slot.get(key, [])
+        if regular_vars:
+            model.add_at_most_one(regular_vars)
+            for elective_var in elective_vars:
+                model.add(sum(regular_vars) + elective_var <= 1)
     for (faculty_id, _), pairs in by_faculty_day.items():
         model.add(sum(v * periods for v, periods in pairs) <= problem.faculty[faculty_id].daily_limit)
     for (_, _), vs in by_offering_day.items():
         if len(vs) > 1:
-            excess = model.new_int_var(0, len(vs), "same_day_excess")
-            model.add(excess >= sum(vs) - 1)
-            penalties.append(problem.weights.get("same_day", 4) * excess)
+            model.add(sum(vs) <= 1)
     parallel_groups = defaultdict(list)
     for s in problem.sessions:
         if s.parallel_key: parallel_groups[s.parallel_key].append(s)

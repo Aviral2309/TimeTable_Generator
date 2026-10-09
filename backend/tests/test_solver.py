@@ -70,6 +70,14 @@ def test_home_rooms_and_fixed_external_lecture():
     assert (fixed.day, fixed.start_period, fixed.room_id) == ("Thursday", 2, 1)
 
 
+def test_same_subject_never_repeats_on_one_day():
+    _, result, _ = solved_demo()
+    days_by_offering = {}
+    for assignment in result.assignments:
+        assert assignment.day not in days_by_offering.setdefault(assignment.offering_id, set())
+        days_by_offering[assignment.offering_id].add(assignment.day)
+
+
 def tiny_problem(session, room=None, faculty=None, reservations=None):
     room = room or RoomResource(1, "R1", 60, "theory")
     faculty = faculty or FacultyResource(1, "F1")

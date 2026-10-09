@@ -58,6 +58,8 @@ class RequiredSession:
     fixed_period: int | None = None
     fixed_room_id: int | None = None
     parallel_key: str | None = None
+    cohort_id: str | None = None
+    is_elective: bool = False
 
 
 @dataclass(frozen=True)

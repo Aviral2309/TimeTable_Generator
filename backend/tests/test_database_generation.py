@@ -21,6 +21,8 @@ def configured_problem():
         sem=SemesterOffering(academic_year_id=year.id,department_id=dep.id,semester_number=number,section="ALL",strength=60,home_room_id=rooms[index].id,home_room_policy="hard");db.add(sem);db.flush();semesters.append(sem)
         db.add(CourseOffering(semester_offering_id=sem.id,code=f"EE{number}01",name="Theory",kind="theory",sessions_per_week=2,duration_periods=1,enrollment=60,faculty_ids=[teachers[index].id],participant_group_ids=[f"SEM-{number}"],eligible_room_ids=[rooms[index].id],required_features=[]))
     db.add(CourseOffering(semester_offering_id=semesters[1].id,code="EE-LAB",name="Lab",kind="lab",sessions_per_week=1,duration_periods=2,enrollment=20,faculty_ids=[teachers[3].id],participant_group_ids=["SEM-5-B1"],eligible_room_ids=[lab.id],required_features=["kit"]))
+    db.add(CourseOffering(semester_offering_id=semesters[2].id,code="EL-A",name="Elective A",kind="elective",sessions_per_week=1,duration_periods=1,enrollment=30,faculty_ids=[teachers[0].id],participant_group_ids=["SEM-7-A"],eligible_room_ids=[rooms[0].id],required_features=[],elective_group="SEM-7-EL",parallel_elective=True))
+    db.add(CourseOffering(semester_offering_id=semesters[2].id,code="EL-B",name="Elective B",kind="elective",sessions_per_week=1,duration_periods=1,enrollment=30,faculty_ids=[teachers[1].id],participant_group_ids=["SEM-7-B"],eligible_room_ids=[rooms[1].id],required_features=[],elective_group="SEM-7-EL",parallel_elective=True))
     times=[("10:00","11:00"),("11:00","12:00"),("12:00","13:00"),("13:00","14:00"),("14:00","15:00")]
     for day in ["Monday","Tuesday","Wednesday"]:
         for i,(start,end) in enumerate(times): db.add(TimeSlot(day=day,period_index=i,start_time=start,end_time=end,blocked=i==3))
@@ -31,7 +33,7 @@ def test_database_records_drive_exactly_three_cohort_schedule():
     db,year,ids=configured_problem(); problem=build_database_problem(db,year.id,ids)
     assert {g for s in problem.sessions for g in s.group_ids if g.startswith("SEM-")} >= {"SEM-3","SEM-5","SEM-7"}
     result=solve(problem,10,42); valid,errors,metrics=validate_schedule(problem,result.assignments)
-    assert result.status in {"optimal","feasible"}; assert valid,errors; assert metrics["scheduled_sessions"]==7
+    assert result.status in {"optimal","feasible"}; assert valid,errors; assert metrics["scheduled_sessions"]==9
     assert all("section" not in g.lower() for s in problem.sessions for g in s.group_ids)
 
 
@@ -39,4 +41,13 @@ def test_lab_from_database_is_consecutive_and_cannot_cross_lunch():
     db,year,ids=configured_problem(); problem=build_database_problem(db,year.id,ids); result=solve(problem,10,42)
     lab=next(x for x in result.assignments if x.session_id.startswith("offering-4"))
     assert lab.duration==2 and lab.start_period == 0
+
+
+def test_electives_are_parallel_and_do_not_overlap_full_cohort_class():
+    db,year,ids=configured_problem(); problem=build_database_problem(db,year.id,ids); result=solve(problem,10,42)
+    electives=[a for a in result.assignments if a.offering_id in {5,6}]
+    assert len({(a.day,a.start_period) for a in electives})==1
+    elective_slots={(electives[0].day,electives[0].start_period)}
+    semester_seven_regular=[a for a in result.assignments if a.offering_id==3]
+    assert not elective_slots & {(a.day,a.start_period) for a in semester_seven_regular}
 
