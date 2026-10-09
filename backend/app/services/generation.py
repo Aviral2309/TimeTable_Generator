@@ -2,14 +2,15 @@ from dataclasses import asdict
 from sqlalchemy.orm import Session
 from app.models.entities import GenerationRun, Timetable, TimetableSession, ValidationReport
 from app.scheduling.annealing import refine
-from app.scheduling.demo import build_demo_problem
 from app.scheduling.database_problem import build_database_problem
 from app.scheduling.solver import solve
 from app.scheduling.validator import validate_schedule
 
 
 def generate_problem(db: Session, academic_year_id: int, mode: str, time_limit: float, seed: int, semester_ids: list[int] | None = None) -> dict:
-    problem = build_database_problem(db, academic_year_id, semester_ids) if semester_ids else build_demo_problem()
+    if not semester_ids:
+        raise ValueError("No semester cohorts were selected")
+    problem = build_database_problem(db, academic_year_id, semester_ids)
     run = GenerationRun(academic_year_id=academic_year_id, status="running", solver_mode=mode, weights=problem.weights)
     db.add(run); db.commit(); db.refresh(run)
     result = solve(problem, time_limit, seed)
@@ -27,8 +28,4 @@ def generate_problem(db: Session, academic_year_id: int, mode: str, time_limit: 
     db.add(ValidationReport(generation_run_id=run.id, valid=valid, errors=errors, metrics=metrics))
     db.commit()
     return {"run_id": run.id, "status": result.status, "objective_value": result.objective, "runtime_seconds": result.runtime_seconds, "valid": valid, "assignments": [asdict(a) for a in assignments], "diagnostics": diagnostics, "metrics": metrics, "refinement": refinement}
-
-
-def generate_demo(db: Session, academic_year_id: int, mode: str, time_limit: float, seed: int) -> dict:
-    return generate_problem(db, academic_year_id, mode, time_limit, seed)
 

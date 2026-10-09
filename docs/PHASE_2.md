@@ -1,5 +1,7 @@
 # Phase 2 implementation report
 
+> Historical checkpoint: the current application supersedes the seeded sign-in flow below with first-admin bootstrap and empty, admin-entered academic data.
+
 ## Delivered
 
 Phase 2 adds a responsive React/TypeScript application backed exclusively by the FastAPI service. The interface includes login, grouped navigation, role-specific dashboards, a 12-step preparation workflow, faculty/room/lab/reservation management, CP-SAT versus hybrid selection, visible generation results, timetable filters, weekly grid, analytics, and authenticated CSV download.

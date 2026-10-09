@@ -17,8 +17,10 @@ router = APIRouter(prefix="/api")
 def health(): return {"status": "ok"}
 
 
-@router.post("/generation/demo", response_model=GenerationResponse)
+@router.post("/generation", response_model=GenerationResponse)
 def generate(request: GenerationRequest, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    if not request.semester_offering_ids:
+        raise HTTPException(422, "Select configured semester cohorts; demo fallback is disabled")
     try:
         return generate_problem(db, request.academic_year_id, request.solver_mode, request.time_limit_seconds, request.random_seed, request.semester_offering_ids)
     except Exception as exc:

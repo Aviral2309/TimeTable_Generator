@@ -1,9 +1,29 @@
 from pydantic import BaseModel, Field, model_validator
 
 
+class InstituteCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+
+
+class DepartmentCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=20)
+    name: str = Field(min_length=2, max_length=150)
+
+
+class AcademicYearCreate(BaseModel):
+    name: str = Field(min_length=4, max_length=30)
+
+
+class WorkingWeekCreate(BaseModel):
+    days: list[str] = Field(min_length=1, max_length=7)
+    start_hour: int = Field(9, ge=0, le=22)
+    periods_per_day: int = Field(8, ge=2, le=12)
+    lunch_after_period: int = Field(3, ge=0, le=11)
+
+
 class SemesterCreate(BaseModel):
-    academic_year_id: int = 1
-    department_id: int = 1
+    academic_year_id: int
+    department_id: int
     semester_number: int = Field(ge=1, le=8)
     strength: int = Field(gt=0, le=300)
     home_room_id: int

@@ -27,13 +27,13 @@ List endpoints are paginated. Writes require the administrator role.
 - `GET/POST/DELETE /api/setup/course-offerings` manages semester-specific subjects, hours, duration, enrollment, faculty and resources.
 - `POST /api/setup/validate` cross-checks exactly three selected cohorts before solving.
 
-Pass `semester_offering_ids` to `POST /api/generation/demo` to build the optimization problem from database records. Omitting it retains the deterministic algorithm demonstration fallback.
+Pass exactly three configured `semester_offering_ids` to `POST /api/generation`. Generation uses database records only; omitting the IDs is rejected.
 
 ## `GET /api/health`
 
 Returns service readiness.
 
-## `POST /api/generation/demo`
+## `POST /api/generation`
 
 Example body:
 

@@ -1,6 +1,6 @@
 # Intelligent Academic Timetable Management & Optimization System
 
-Phase 2 delivers an integrated web application and independently validated scheduling backend for the SGSITS-style department demonstration. It schedules EE Semesters III, V, and VII together while treating faculty, rooms, laboratories, student groups, electives, and imported first-year commitments as shared resources.
+The application now uses an admin-first workflow. A fresh installation contains no institute, department, academic year, faculty, rooms, semester cohorts, subjects, reservations, or timetable. The first administrator creates an account and enters the institution's real records before generation is enabled.
 
 ## What works now
 
@@ -21,7 +21,7 @@ Phase 2 delivers an integrated web application and independently validated sched
 - Feasibility-preserving direct-move Simulated Annealing refinement
 - Independent schedule validator and quality metrics
 - Persisted generation runs, schedules, diagnostics, and validation reports
-- Realistic fictional 15-faculty seed master data
+- Empty production database with an optional, explicit development-only seed script
 - Automated solver and API-service workflow tests
 - React 19 and TypeScript responsive administration interface
 - Secure role-based admin, faculty, and student workspaces
@@ -57,7 +57,6 @@ python -m pip install -e ".[test]"
 Copy-Item .env.example .env
 python -m alembic upgrade head
 $env:PYTHONPATH = "backend"
-python scripts/seed.py
 uvicorn app.main:app --reload
 ```
 
@@ -69,13 +68,9 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. API documentation remains at `http://localhost:8000/docs`.
+Open `http://127.0.0.1:5173`. On the first visit, create the first administrator account. Then follow **Start Setup** to add academic foundation data, faculty, rooms/labs, three semester cohorts, subjects, allocations, and reservations. API documentation remains at `http://localhost:8000/docs`.
 
-Demo accounts all use password `Demo@123`:
-
-- `admin@example.edu`
-- `faculty@example.edu`
-- `student@example.edu`
+Do not run the seed command for a real installation. Developers who deliberately want fictional demonstration data may run `python scripts/seed.py` against a disposable database.
 
 Run verification:
 
@@ -89,18 +84,18 @@ PostgreSQL-backed startup is available through:
 docker compose up --build
 ```
 
-## Demonstration data
+## Admin-first data entry
 
-The solver demonstration contains:
+Generation is locked until the administrator has entered:
 
-- three EE semesters with separate hard home rooms;
-- 15 global faculty identities, including an externally taught fixed ECE lecture;
-- four 15-student Semester V lab batches;
-- 20- and 40-student parallel Semester VII electives;
-- a shared Power Electronics laboratory reserved by first year on Monday 10:00–12:00;
-- configurable Monday–Friday periods with 1:00–2:00 blocked for lunch.
+- institute, department, active academic year, working days and periods;
+- faculty workload records;
+- theory rooms and laboratories with capacity/features;
+- exactly three combined semester cohorts (no sections);
+- every subject, weekly frequency, assigned faculty, eligible room/lab, batch, and elective group;
+- any fixed room/resource reservations.
 
-The seed command writes permanent master data. The `/generation/demo` endpoint currently maps the equivalent deterministic demonstration dataset into the standalone scheduling model. Database-to-domain configuration CRUD and wizard support belong to Phase 2.
+`POST /api/generation` requires selected database-backed semester IDs. There is no automatic demonstration fallback.
 
 ## Solver status semantics
 
@@ -119,7 +114,7 @@ Implemented: the Phase 1 optimization foundation plus signed authentication, pas
 
 Known limitations for the next phases:
 
-- Generation can use selected database-backed semester configurations. The demo fallback remains available only when no semester IDs are supplied.
+- Publication/versioning and dynamic rescheduling remain Phase 3 work.
 - Direct-move annealing is implemented; CP-SAT neighborhood repair is not yet implemented.
 - Student/faculty gap metrics are measured after solving, but full gap linearization in the CP-SAT objective is deferred to Phase 2.
 - Dynamic rescheduling, immutable publication versions, exports, and change requests are Phase 3.

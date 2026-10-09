@@ -1,5 +1,6 @@
 export type User={id:number;email:string;name:string;role:'admin'|'faculty'|'student';faculty_id?:number;student_group_id?:string}
 export type Session={id:number;course_offering_id:number;course_code:string;course_name:string;kind:string;semester_number:number|null;day:string;start_period:number;duration_periods:number;room_id:number;room_code:string;faculty_ids:number[];faculty_names:string[];participant_group_ids:string[]}
+export type SetupStatus={counts:Record<string,number>;steps:{key:string;label:string;complete:boolean}[];ready_for_validation:boolean;active_year:{id:number;name:string}|null}
 const API='/api'
 export const token=()=>localStorage.getItem('timetable_token')
 export async function request<T>(path:string,init:RequestInit={}):Promise<T>{
@@ -10,12 +11,16 @@ export async function request<T>(path:string,init:RequestInit={}):Promise<T>{
   return response.json()
 }
 export const login=(email:string,password:string)=>request<{access_token:string;user:User}>('/auth/login',{method:'POST',body:JSON.stringify({email,password})})
+export const bootstrapStatus=()=>request<{needs_admin:boolean}>('/auth/bootstrap-status')
+export const bootstrapAdmin=(data:{name:string;email:string;password:string})=>request<{access_token:string;user:User}>('/auth/bootstrap',{method:'POST',body:JSON.stringify(data)})
 export const list=(resource:string)=>request<{items:any[];total:number}>(`/${resource}?page=1&page_size=100`)
 export const create=(resource:string,data:unknown)=>request(`/${resource}`,{method:'POST',body:JSON.stringify(data)})
 export const timetable=()=>request<{id:number;version:number;status:string;sessions:Session[]}>('/timetables/latest')
 export const setupOptions=()=>request<any>('/setup/options')
-export const semesters=()=>request<{items:any[]}>('/setup/semesters?academic_year_id=1')
+export const setupStatus=()=>request<SetupStatus>('/setup/status')
+export const setupCreate=(resource:string,data:unknown)=>request(`/setup/${resource}`,{method:'POST',body:JSON.stringify(data)})
+export const semesters=(academicYearId:number)=>request<{items:any[]}>(`/setup/semesters?academic_year_id=${academicYearId}`)
 export const offerings=(semesterId:number)=>request<{items:any[]}>(`/setup/course-offerings?semester_offering_id=${semesterId}`)
 export const addOffering=(data:any)=>request('/setup/course-offerings',{method:'POST',body:JSON.stringify(data)})
-export const validateSetup=(ids:number[])=>request<{valid:boolean;errors:any[]}>('/setup/validate?academic_year_id=1',{method:'POST',body:JSON.stringify(ids)})
+export const validateSetup=(academicYearId:number,ids:number[])=>request<{valid:boolean;errors:any[]}>(`/setup/validate?academic_year_id=${academicYearId}`,{method:'POST',body:JSON.stringify(ids)})
 
