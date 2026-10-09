@@ -119,7 +119,7 @@ Implemented: the Phase 1 optimization foundation plus signed authentication, pas
 
 Known limitations for the next phases:
 
-- The generation endpoint currently exercises the seeded demonstration mapper. Converting arbitrary database draft configuration into the solver domain remains a hardening item.
+- Generation can use selected database-backed semester configurations. The demo fallback remains available only when no semester IDs are supplied.
 - Direct-move annealing is implemented; CP-SAT neighborhood repair is not yet implemented.
 - Student/faculty gap metrics are measured after solving, but full gap linearization in the CP-SAT objective is deferred to Phase 2.
 - Dynamic rescheduling, immutable publication versions, exports, and change requests are Phase 3.

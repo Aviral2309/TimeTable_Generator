@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 class GenerationRequest(BaseModel):
     academic_year_id: int = 1
+    semester_offering_ids: list[int] | None = None
     solver_mode: Literal["cp_sat", "hybrid"] = "hybrid"
     time_limit_seconds: float = Field(10, gt=0, le=300)
     random_seed: int = 42

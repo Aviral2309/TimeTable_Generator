@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
 from app.api.auth import router as auth_router
 from app.api.master_data import router as master_data_router
+from app.api.setup import router as setup_router
 from app.core.config import get_settings
 from app.db.session import Base, engine
 from app import models  # noqa: F401
@@ -13,6 +14,7 @@ app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in settings.co
 app.include_router(router)
 app.include_router(auth_router)
 app.include_router(master_data_router)
+app.include_router(setup_router)
 
 
 @app.on_event("startup")

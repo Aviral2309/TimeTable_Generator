@@ -94,11 +94,12 @@ class TimeSlot(Base):
 
 class SemesterOffering(Base):
     __tablename__ = "semester_offerings"
+    __table_args__ = (UniqueConstraint("academic_year_id", "department_id", "semester_number", name="uq_single_semester_cohort"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     academic_year_id: Mapped[int] = mapped_column(ForeignKey("academic_years.id"), index=True)
     department_id: Mapped[int] = mapped_column(ForeignKey("departments.id"))
     semester_number: Mapped[int] = mapped_column(Integer)
-    section: Mapped[str] = mapped_column(String(10), default="A")
+    section: Mapped[str] = mapped_column(String(10), default="ALL")
     strength: Mapped[int] = mapped_column(Integer)
     home_room_id: Mapped[int | None] = mapped_column(ForeignKey("rooms.id"))
     home_room_policy: Mapped[str] = mapped_column(String(10), default="hard")

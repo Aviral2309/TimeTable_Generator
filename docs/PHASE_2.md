@@ -23,7 +23,11 @@ Security is implemented server-side with salted PBKDF2 password hashes, signed e
 6. Filter by participant group and download CSV.
 7. Sign in as faculty/student to observe role-filtered navigation and schedule access.
 
+## Real semester configuration extension
+
+The preparation workflow now reads and writes real semester offerings. There is one combined cohort—no sections—for each selected semester. Subjects capture weekly frequency, duration, enrollment, activity type, faculty and eligible room/lab using reusable master-data dropdowns. Exactly three distinct cohorts are jointly prevalidated and converted from database records into the solver domain. Generation takes a configuration snapshot through the selected semester IDs and the independent validator checks the result. Student gaps carry the dominant refinement penalty; the seeded configuration reaches zero student gaps with deterministic seed 42.
+
 ## Boundaries carried into Phase 3
 
-The browser preparation flow currently operates on the seeded, internally consistent demonstration configuration. General database-to-domain mapping for every possible scheme/offering configuration needs expansion before institute-wide deployment. PDF/Excel export, immutable publication workflow, change requests, minimum-disruption rescheduling, manual drag-and-drop edits, and full end-to-end browser automation belong to Phase 3.
+PDF/Excel export, immutable publication workflow, change requests, minimum-disruption rescheduling, manual drag-and-drop edits, and broader end-to-end browser automation belong to Phase 3.
 

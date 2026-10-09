@@ -20,6 +20,15 @@ Authenticated endpoints expect `Authorization: Bearer <token>`. Obtain the token
 
 List endpoints are paginated. Writes require the administrator role.
 
+## Semester preparation
+
+- `GET /api/setup/options` supplies permanent faculty, room/lab, department and academic-year dropdown data.
+- `GET/POST /api/setup/semesters` manages one combined cohort per semester number.
+- `GET/POST/DELETE /api/setup/course-offerings` manages semester-specific subjects, hours, duration, enrollment, faculty and resources.
+- `POST /api/setup/validate` cross-checks exactly three selected cohorts before solving.
+
+Pass `semester_offering_ids` to `POST /api/generation/demo` to build the optimization problem from database records. Omitting it retains the deterministic algorithm demonstration fallback.
+
 ## `GET /api/health`
 
 Returns service readiness.
