@@ -114,7 +114,6 @@ def create_working_week(body: WorkingWeekCreate, db: Session = Depends(get_db), 
     days = list(dict.fromkeys(day.strip().title() for day in body.days if day.strip()))
     if not days: raise HTTPException(422, "Select at least one working day")
     if body.lunch_after_period >= body.periods_per_day: raise HTTPException(422, "Lunch period must fall within the working day")
-    if body.start_hour + body.lunch_after_period != 12: raise HTTPException(422, "Lunch break must be fixed at 12:00-13:00")
     if body.start_hour + body.periods_per_day > 24: raise HTTPException(422, "Working periods cannot extend past midnight")
     for day in days:
         for index in range(body.periods_per_day):
@@ -129,7 +128,6 @@ def update_working_week(body: WorkingWeekCreate, db: Session = Depends(get_db), 
     days = [day.strip() for day in body.days if day.strip()]
     if not days: raise HTTPException(422, "Select at least one working day")
     if body.lunch_after_period >= body.periods_per_day: raise HTTPException(422, "Lunch period must fall within the working day")
-    if body.start_hour + body.lunch_after_period != 12: raise HTTPException(422, "Lunch break must be fixed at 12:00-13:00")
     if body.start_hour + body.periods_per_day > 24: raise HTTPException(422, "Working periods cannot extend past midnight")
     db.query(TimeSlot).delete(); db.commit()
     return create_working_week(body, db, _)

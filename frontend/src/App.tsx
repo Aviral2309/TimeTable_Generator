@@ -951,7 +951,7 @@ function WorkingWeekForm({ done, initial, close }: { done: () => void; initial?:
           max="11"
           value={form.start_hour}
           onChange={(e) =>
-            setForm({ ...form, start_hour: Number(e.target.value), lunch_after_period: 12 - Number(e.target.value) })
+            setForm({ ...form, start_hour: Number(e.target.value) })
           }
         />
       </label>
@@ -960,20 +960,22 @@ function WorkingWeekForm({ done, initial, close }: { done: () => void; initial?:
         <input
           type="number"
           value={form.periods_per_day}
-          onChange={(e) =>
-            setForm({ ...form, periods_per_day: Number(e.target.value) })
-          }
+          onChange={(e) => {
+            const periods = Number(e.target.value);
+            setForm({ ...form, periods_per_day: periods, lunch_after_period: Math.min(form.lunch_after_period, Math.max(0, periods - 1)) });
+          }}
         />
       </label>
       <label>
         Lunch break
-        <input
-          value="12:00–13:00"
-          disabled
-          readOnly
-        />
+        <select value={form.lunch_after_period} onChange={(e) => setForm({ ...form, lunch_after_period: Number(e.target.value) })}>
+          {Array.from({ length: form.periods_per_day }, (_, index) => {
+            const start = form.start_hour + index;
+            return <option value={index} key={index}>{String(start).padStart(2, "0")}:00–{String(start + 1).padStart(2, "0")}:00</option>;
+          })}
+        </select>
       </label>
-      <small>Lunch is a fixed institutional break and cannot be changed.</small>
+      <small>Select the institution's lunch timing. This period is blocked for every semester, room, and teacher.</small>
       {mutation.error && (
         <div className="error">{errorText(mutation.error)}</div>
       )}
