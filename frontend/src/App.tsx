@@ -1198,8 +1198,17 @@ function SubjectForm({
     fixed_period: null,
     fixed_room_id: null,
   });
+  const [requiredCapabilitiesText, setRequiredCapabilitiesText] = useState(
+    (initial?.required_features || []).join("\n"),
+  );
   const mutation = useMutation({
-    mutationFn: () => initial ? updateOffering(initial.id, form) : addOffering(form),
+    mutationFn: () => {
+      const payload = {
+        ...form,
+        required_features: splitCapabilities(requiredCapabilitiesText),
+      };
+      return initial ? updateOffering(initial.id, payload) : addOffering(payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["offerings", semesterId] });
       qc.invalidateQueries({ queryKey: ["setup-status"] });
@@ -1312,7 +1321,7 @@ function SubjectForm({
           </label>
           <label>
             Required lab capabilities
-            <textarea placeholder={"One per line, or separated by commas/semicolons\nExample: Network Lab; Electrical Machines"} value={(form.required_features || []).join("\n")} onChange={(e) => set("required_features", splitCapabilities(e.target.value))} />
+            <textarea placeholder={"One per line, or separated by commas/semicolons\nExample: Network Lab; Electrical Machines"} value={requiredCapabilitiesText} onChange={(e) => setRequiredCapabilitiesText(e.target.value)} />
             <small>The optimizer will only use labs whose supported subjects/capabilities include these values.</small>
           </label>
         </>
@@ -1791,8 +1800,16 @@ function CreateForm({
           };
   const editable = initial ? Object.fromEntries(Object.keys(defaults).map((key) => [key, initial[key] ?? defaults[key]])) : defaults;
   const [form, setForm] = useState<any>(editable);
+  const [capabilitiesText, setCapabilitiesText] = useState(
+    (editable.features || []).join("\n"),
+  );
   const mutation = useMutation({
-    mutationFn: () => initial ? update(resource, initial.id, form) : create(resource, form),
+    mutationFn: () => {
+      const payload = resource === "rooms"
+        ? { ...form, features: splitCapabilities(capabilitiesText) }
+        : form;
+      return initial ? update(resource, initial.id, payload) : create(resource, payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [resource] });
       qc.invalidateQueries({ queryKey: ["setup-options"] });
@@ -1820,9 +1837,7 @@ function CreateForm({
       ...form,
       [key]: numeric.includes(key)
         ? value === "" ? null : Number(value)
-        : key === "features"
-          ? splitCapabilities(value)
-          : value,
+        : value,
     });
   }
   return (
@@ -1894,8 +1909,8 @@ function CreateForm({
           ) : key === "features" ? (
             <textarea
               placeholder={"One per line, or separated by commas/semicolons\nExample: Network Lab; Electrical Machines"}
-              value={(form[key] || []).join("\n")}
-              onChange={(e) => updateField(key, e.target.value)}
+              value={capabilitiesText}
+              onChange={(e) => setCapabilitiesText(e.target.value)}
             />
           ) : (
             <input
