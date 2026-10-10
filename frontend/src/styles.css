@@ -20,7 +20,8 @@ body {
 }
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 button,
@@ -809,11 +810,13 @@ th {
   font-size: 0.83rem;
 }
 .form-grid input,
-.form-grid select {
+.form-grid select,
+.form-grid textarea {
   border: 1px solid #cadce6;
   border-radius: 9px;
   padding: 11px;
 }
+.form-grid textarea { min-height: 96px; resize: vertical; }
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -1019,12 +1022,14 @@ th {
   font-weight: 700;
   margin: 6px 0;
 }
-.quick-card input {
+.quick-card input,
+.quick-card textarea {
   border: 1px solid #cadce6;
   border-radius: 8px;
   padding: 9px;
   width: 100%;
 }
+.quick-card textarea { min-height: 96px; resize: vertical; }
 .quick-card button {
   margin-top: auto;
 }

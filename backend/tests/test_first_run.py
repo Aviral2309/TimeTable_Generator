@@ -104,3 +104,10 @@ def test_term_selection_creates_only_the_expected_semesters():
     result = create_term_cohorts(TermCohortsCreate(academic_year_id=year.id, department_id=department.id, default_strength=72), db, actor)
     assert {item.semester_number for item in result["items"]} == {2, 4, 6}
     assert all(item.home_room_id is None and item.strength == 72 for item in result["items"])
+
+
+def test_capability_names_allow_spaces_and_remove_case_insensitive_duplicates():
+    room = RoomCreate(code="NL", name="Network and Machines Lab", capacity=40, room_type="lab", features=[" Network   Lab ", "network lab", "Electrical Machines"])
+    assert room.features == ["Network Lab", "Electrical Machines"]
+    subject = CourseOfferingCreate(semester_offering_id=1, code="EE-LAB", name="Network Lab", kind="lab", sessions_per_week=1, duration_periods=2, enrollment=20, faculty_ids=[1], eligible_room_ids=[], required_features=[" network   LAB "])
+    assert subject.required_features == ["network LAB"]

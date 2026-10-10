@@ -77,6 +77,18 @@ function saveSession(
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
+function splitCapabilities(value: string) {
+  const seen = new Set<string>();
+  return value
+    .split(/[,;\n]+/)
+    .map((item) => item.trim().replace(/\s+/g, " "))
+    .filter((item) => {
+      const key = item.toLocaleLowerCase();
+      if (!item || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(storedUser);
@@ -1300,7 +1312,7 @@ function SubjectForm({
           </label>
           <label>
             Required lab capabilities
-            <input placeholder="Example: network, machines" value={(form.required_features || []).join(", ")} onChange={(e) => set("required_features", e.target.value.split(",").map((value) => value.trim()).filter(Boolean))} />
+            <textarea placeholder={"One per line, or separated by commas/semicolons\nExample: Network Lab; Electrical Machines"} value={(form.required_features || []).join("\n")} onChange={(e) => set("required_features", splitCapabilities(e.target.value))} />
             <small>The optimizer will only use labs whose supported subjects/capabilities include these values.</small>
           </label>
         </>
@@ -1809,10 +1821,7 @@ function CreateForm({
       [key]: numeric.includes(key)
         ? value === "" ? null : Number(value)
         : key === "features"
-          ? value
-              .split(",")
-              .map((x) => x.trim())
-              .filter(Boolean)
+          ? splitCapabilities(value)
           : value,
     });
   }
@@ -1882,6 +1891,12 @@ function CreateForm({
                 <option key={d}>{d}</option>
               ))}
             </select>
+          ) : key === "features" ? (
+            <textarea
+              placeholder={"One per line, or separated by commas/semicolons\nExample: Network Lab; Electrical Machines"}
+              value={(form[key] || []).join("\n")}
+              onChange={(e) => updateField(key, e.target.value)}
+            />
           ) : (
             <input
               required={!["features", "faculty_id", "participant_group_id"].includes(key)}
@@ -1892,7 +1907,6 @@ function CreateForm({
                     ? "email"
                     : "text"
               }
-              placeholder={key === "features" ? "network, machines, power systems" : undefined}
               value={
                 Array.isArray(form[key])
                   ? form[key].join(", ")

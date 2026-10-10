@@ -1,4 +1,16 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+def clean_capabilities(values: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        label = " ".join(value.strip().split())
+        key = label.casefold()
+        if label and key not in seen:
+            cleaned.append(label)
+            seen.add(key)
+    return cleaned
 
 
 class FacultyCreate(BaseModel):
@@ -19,6 +31,11 @@ class RoomCreate(BaseModel):
     room_type: str = Field(pattern="^(theory|lab)$")
     features: list[str] = []
     concurrent_capacity: int = Field(1, ge=1, le=10)
+
+    @field_validator("features")
+    @classmethod
+    def normalize_features(cls, values: list[str]) -> list[str]:
+        return clean_capabilities(values)
 
 
 class ReservationCreate(BaseModel):

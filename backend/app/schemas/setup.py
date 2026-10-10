@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+from app.schemas.master_data import clean_capabilities
 
 
 class InstituteCreate(BaseModel):
@@ -58,6 +59,11 @@ class CourseOfferingCreate(BaseModel):
     fixed_day: str | None = None
     fixed_period: int | None = Field(None, ge=0, le=7)
     fixed_room_id: int | None = None
+
+    @field_validator("required_features")
+    @classmethod
+    def normalize_required_features(cls, values: list[str]) -> list[str]:
+        return clean_capabilities(values)
 
     @model_validator(mode="after")
     def validate_kind(self):
