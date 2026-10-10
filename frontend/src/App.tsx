@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  addLabBatchOfferings,
   addOffering,
   bootstrapAdmin,
   bootstrapStatus,
@@ -1099,6 +1100,8 @@ function Modal({
   close,
   submit,
   pending,
+  submitDisabled = false,
+  wide = false,
   error,
   children,
 }: {
@@ -1106,13 +1109,15 @@ function Modal({
   close: () => void;
   submit: () => void;
   pending: boolean;
+  submitDisabled?: boolean;
+  wide?: boolean;
   error: unknown;
   children: React.ReactNode;
 }) {
   return (
     <div className="modal-backdrop">
       <form
-        className="modal"
+        className={`modal ${wide ? "wide-modal" : ""}`}
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
           submit();
@@ -1133,7 +1138,7 @@ function Modal({
           <button type="button" className="secondary" onClick={close}>
             Cancel
           </button>
-          <button className="primary" disabled={pending}>
+          <button className="primary" disabled={pending || submitDisabled}>
             {pending ? "Saving…" : "Save record"}
           </button>
         </div>
@@ -1177,6 +1182,7 @@ function SubjectForm({
   close: () => void;
 }) {
   const qc = useQueryClient();
+  const firstFacultyId = options.faculty[0]?.id;
   const [form, setForm] = useState<any>(initial ? {
     ...initial,
     participant_group: initial.participant_group_ids?.[0] || null,
@@ -1188,7 +1194,7 @@ function SubjectForm({
     sessions_per_week: 3,
     duration_periods: 1,
     enrollment: 60,
-    faculty_ids: [options.faculty[0]?.id],
+    faculty_ids: firstFacultyId ? [firstFacultyId] : [],
     eligible_room_ids: [],
     required_features: [],
     participant_group: null,
@@ -1201,12 +1207,49 @@ function SubjectForm({
   const [requiredCapabilitiesText, setRequiredCapabilitiesText] = useState(
     (initial?.required_features || []).join("\n"),
   );
+  const [labCategory, setLabCategory] = useState<"regular" | "elective">("regular");
+  const createBatchRows = (count: number, existing: any[] = []) =>
+    Array.from({ length: count }, (_, index) => existing[index] || ({
+      participant_group: `B${index + 1}`,
+      faculty_ids: firstFacultyId ? [firstFacultyId] : [],
+      room_id: null,
+    }));
+  const [batchAllocations, setBatchAllocations] = useState<any[]>(() => createBatchRows(4));
+  const updateBatch = (index: number, changes: Record<string, any>) => {
+    setBatchAllocations((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...changes } : row));
+  };
+  const selectLabCategory = (category: "regular" | "elective") => {
+    setLabCategory(category);
+    setBatchAllocations((rows) => createBatchRows(category === "elective" ? 2 : 4, rows));
+  };
+  const copyFirstBatch = () => {
+    setBatchAllocations((rows) => rows.map((row, index) => index === 0 ? row : ({
+      ...row,
+      faculty_ids: [...rows[0].faculty_ids],
+      room_id: rows[0].room_id,
+    })));
+  };
+  const batchInvalid = !initial && form.kind === "lab" && batchAllocations.some(
+    (batch) => !batch.participant_group.trim() || !batch.faculty_ids.length,
+  );
   const mutation = useMutation({
     mutationFn: () => {
       const payload = {
         ...form,
         required_features: splitCapabilities(requiredCapabilitiesText),
       };
+      if (!initial && form.kind === "lab") {
+        return addLabBatchOfferings({
+          semester_offering_id: semesterId,
+          code: form.code,
+          name: form.name,
+          sessions_per_week: form.sessions_per_week,
+          total_enrollment: form.enrollment,
+          required_features: payload.required_features,
+          elective_lab: labCategory === "elective",
+          batches: batchAllocations,
+        });
+      }
       return initial ? updateOffering(initial.id, payload) : addOffering(payload);
     },
     onSuccess: () => {
@@ -1226,10 +1269,12 @@ function SubjectForm({
   };
   return (
     <Modal
-      title={initial ? "Edit subject and allocation" : "Add subject and allocation"}
+      title={initial ? "Edit subject and allocation" : form.kind === "lab" ? "Add lab and allocate every batch" : "Add subject and allocation"}
       close={close}
       submit={() => mutation.mutate()}
       pending={mutation.isPending}
+      submitDisabled={batchInvalid}
+      wide={!initial && form.kind === "lab"}
       error={mutation.error}
     >
       <label>
@@ -1256,6 +1301,21 @@ function SubjectForm({
           <option value="elective">Elective</option>
         </select>
       </label>
+      {!initial && form.kind === "lab" && (
+        <fieldset className="multi-select-field lab-category-field">
+          <legend>Lab batch pattern</legend>
+          <div className="lab-category-options">
+            <label className={labCategory === "regular" ? "selected" : ""}>
+              <input type="radio" name="lab-category" checked={labCategory === "regular"} onChange={() => selectLabCategory("regular")} />
+              <span><strong>Regular lab</strong><small>4 batches · B1 to B4</small></span>
+            </label>
+            <label className={labCategory === "elective" ? "selected" : ""}>
+              <input type="radio" name="lab-category" checked={labCategory === "elective"} onChange={() => selectLabCategory("elective")} />
+              <span><strong>Elective lab</strong><small>2 batches · B1 and B2</small></span>
+            </label>
+          </div>
+        </fieldset>
+      )}
       <label>
         Classes per week
         <input
@@ -1278,7 +1338,7 @@ function SubjectForm({
         />
       </label>
       <label>
-        Students enrolled
+        {!initial && form.kind === "lab" ? "Total semester students" : "Students enrolled"}
         <input
           type="number"
           min="1"
@@ -1286,44 +1346,87 @@ function SubjectForm({
           onChange={(e) => set("enrollment", Number(e.target.value))}
         />
       </label>
-      <fieldset className="multi-select-field">
-        <legend>Teaching faculty · select one or more</legend>
-        <div className="check-list">
-          {options.faculty.map((f: any) => {
-            const checked = form.faculty_ids.includes(f.id);
-            return <label className="checkbox" key={f.id}>
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => set("faculty_ids", checked ? form.faculty_ids.filter((id: number) => id !== f.id) : [...form.faculty_ids, f.id])}
-              />
-              {f.faculty_code} · {f.name}
-            </label>;
-          })}
-        </div>
-        {!form.faculty_ids.length && <small className="field-error">Select at least one teacher.</small>}
-      </fieldset>
-      <fieldset className="multi-select-field">
-        <legend>{form.kind === "lab" ? "Allowed laboratories" : "Allowed classrooms"} · optional</legend>
-        <p className="muted">Leave every option unchecked to let the optimizer select any compatible room automatically.</p>
-        <div className="check-list">
-          {options.rooms.filter((room: any) => form.kind === "lab" ? room.room_type === "lab" : room.room_type === "theory").map((room: any) => {
-            const checked = form.eligible_room_ids.includes(room.id);
-            return <label className="checkbox" key={room.id}><input type="checkbox" checked={checked} onChange={() => set("eligible_room_ids", checked ? form.eligible_room_ids.filter((id: number) => id !== room.id) : [...form.eligible_room_ids, room.id])} />{room.code} · {room.name} · capacity {room.capacity}{room.concurrent_capacity > 1 ? ` · ${room.concurrent_capacity} simultaneous groups` : ""}</label>;
-          })}
-        </div>
-      </fieldset>
+      {(form.kind !== "lab" || initial) && <>
+        <fieldset className="multi-select-field">
+          <legend>Teaching faculty · select one or more</legend>
+          <div className="check-list">
+            {options.faculty.map((f: any) => {
+              const checked = form.faculty_ids.includes(f.id);
+              return <label className="checkbox" key={f.id}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => set("faculty_ids", checked ? form.faculty_ids.filter((id: number) => id !== f.id) : [...form.faculty_ids, f.id])}
+                />
+                {f.faculty_code} · {f.name}
+              </label>;
+            })}
+          </div>
+          {!form.faculty_ids.length && <small className="field-error">Select at least one teacher.</small>}
+        </fieldset>
+        <fieldset className="multi-select-field">
+          <legend>{form.kind === "lab" ? "Allowed laboratories" : "Allowed classrooms"} · optional</legend>
+          <p className="muted">Leave every option unchecked to let the optimizer select any compatible room automatically.</p>
+          <div className="check-list">
+            {options.rooms.filter((room: any) => form.kind === "lab" ? room.room_type === "lab" : room.room_type === "theory").map((room: any) => {
+              const checked = form.eligible_room_ids.includes(room.id);
+              return <label className="checkbox" key={room.id}><input type="checkbox" checked={checked} onChange={() => set("eligible_room_ids", checked ? form.eligible_room_ids.filter((id: number) => id !== room.id) : [...form.eligible_room_ids, room.id])} />{room.code} · {room.name} · capacity {room.capacity}{room.concurrent_capacity > 1 ? ` · ${room.concurrent_capacity} simultaneous groups` : ""}</label>;
+            })}
+          </div>
+        </fieldset>
+      </>}
       {form.kind === "lab" && (
         <>
-          <label>
+          {initial && <label>
             Batch/group name
             <input required placeholder="Example: SEM-5-B1" value={form.participant_group || ""} onChange={(e) => set("participant_group", e.target.value)} />
-          </label>
+          </label>}
           <label>
             Required lab capabilities
             <textarea placeholder={"One per line, or separated by commas/semicolons\nExample: Network Lab; Electrical Machines"} value={requiredCapabilitiesText} onChange={(e) => setRequiredCapabilitiesText(e.target.value)} />
             <small>The optimizer will only use labs whose supported subjects/capabilities include these values.</small>
           </label>
+          {!initial && (
+            <fieldset className="multi-select-field batch-allocation-field">
+              <div className="batch-allocation-head">
+                <div><legend>Batch-wise faculty and laboratory allocation</legend><p className="muted">Choose a room for each batch, or leave Automatic so the generator selects a compatible lab.</p></div>
+                <button type="button" className="secondary" onClick={copyFirstBatch}>Copy B1 allocation to all</button>
+              </div>
+              <div className="batch-allocation-grid">
+                {batchAllocations.map((batch, index) => (
+                  <section className="batch-allocation-card" key={index}>
+                    <h3>Batch {index + 1}</h3>
+                    <label>
+                      Batch name
+                      <input required value={batch.participant_group} onChange={(event) => updateBatch(index, { participant_group: event.target.value })} />
+                    </label>
+                    <label>
+                      Laboratory
+                      <select value={batch.room_id || ""} onChange={(event) => updateBatch(index, { room_id: event.target.value ? Number(event.target.value) : null })}>
+                        <option value="">Automatic compatible lab</option>
+                        {options.rooms.filter((room: any) => room.room_type === "lab").map((room: any) => (
+                          <option key={room.id} value={room.id}>{room.code} · {room.name} · capacity {room.capacity}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="batch-faculty">
+                      <strong>Faculty · one or more</strong>
+                      <div className="check-list compact-check-list">
+                        {options.faculty.map((faculty: any) => {
+                          const checked = batch.faculty_ids.includes(faculty.id);
+                          return <label className="checkbox" key={faculty.id}>
+                            <input type="checkbox" checked={checked} onChange={() => updateBatch(index, { faculty_ids: checked ? batch.faculty_ids.filter((id: number) => id !== faculty.id) : [...batch.faculty_ids, faculty.id] })} />
+                            {faculty.faculty_code} · {faculty.name}
+                          </label>;
+                        })}
+                      </div>
+                      {!batch.faculty_ids.length && <small className="field-error">Select at least one teacher.</small>}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </fieldset>
+          )}
         </>
       )}
       {form.kind === "elective" && (

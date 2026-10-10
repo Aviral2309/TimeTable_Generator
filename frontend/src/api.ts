@@ -142,6 +142,14 @@ export const addOffering = (data: any) =>
     method: "POST",
     body: JSON.stringify(data),
   });
+export const addLabBatchOfferings = (data: any) =>
+  request<{ items: any[]; batch_count: number; elective_lab: boolean }>(
+    "/setup/course-offerings/lab-batches",
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    },
+  );
 export const updateOffering = (id: number, data: any) =>
   request(`/setup/course-offerings/${id}`, {
     method: "PUT",

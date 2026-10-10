@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.security import require_roles
 from app.db.session import get_db
 from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, FacultyAvailability, FixedReservation, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, TimetableSession, User
-from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, SemesterCreate, TermCohortsCreate, WorkingWeekCreate
+from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, LabOfferingBatchCreate, SemesterCreate, TermCohortsCreate, WorkingWeekCreate
 from app.scheduling.database_problem import build_database_problem
 from app.scheduling.preprocessing import validate_problem
 
@@ -220,6 +220,57 @@ def create_course_offering(body: CourseOfferingCreate, db: Session = Depends(get
     data = body.model_dump(exclude={"participant_group"})
     data["participant_group_ids"] = [body.participant_group or f"SEM-{semester.semester_number}"]
     item = CourseOffering(**data); db.add(item); db.commit(); db.refresh(item); return item
+
+
+@router.post("/course-offerings/lab-batches", status_code=201)
+def create_lab_batch_offerings(body: LabOfferingBatchCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    semester = db.get(SemesterOffering, body.semester_offering_id)
+    if not semester:
+        raise HTTPException(404, "Semester configuration not found")
+    faculty_ids = {faculty_id for batch in body.batches for faculty_id in batch.faculty_ids}
+    room_ids = {batch.room_id for batch in body.batches if batch.room_id is not None}
+    missing_faculty = [faculty_id for faculty_id in faculty_ids if not db.get(Faculty, faculty_id)]
+    rooms = {room_id: db.get(Room, room_id) for room_id in room_ids}
+    missing_rooms = [room_id for room_id, room in rooms.items() if not room]
+    non_lab_rooms = [room_id for room_id, room in rooms.items() if room and room.room_type != "lab"]
+    if missing_faculty or missing_rooms or non_lab_rooms:
+        raise HTTPException(422, {
+            "missing_faculty": missing_faculty,
+            "missing_rooms": missing_rooms,
+            "non_lab_rooms": non_lab_rooms,
+        })
+
+    base_size, remainder = divmod(body.total_enrollment, len(body.batches))
+    items = []
+    for index, batch in enumerate(body.batches):
+        group = " ".join(batch.participant_group.strip().split())
+        if not group.casefold().startswith("sem-"):
+            group = f"SEM-{semester.semester_number}-{group}"
+        room_ids_for_batch = [batch.room_id] if batch.room_id is not None else []
+        item = CourseOffering(
+            semester_offering_id=semester.id,
+            code=body.code.strip(),
+            name=body.name.strip(),
+            kind="lab",
+            sessions_per_week=body.sessions_per_week,
+            duration_periods=2,
+            enrollment=base_size + (1 if index < remainder else 0),
+            faculty_ids=batch.faculty_ids,
+            participant_group_ids=[group],
+            eligible_room_ids=room_ids_for_batch,
+            required_features=body.required_features,
+            elective_group=None,
+            parallel_elective=False,
+            fixed_day=None,
+            fixed_period=None,
+            fixed_room_id=batch.room_id,
+        )
+        db.add(item)
+        items.append(item)
+    db.commit()
+    for item in items:
+        db.refresh(item)
+    return {"items": items, "batch_count": len(items), "elective_lab": body.elective_lab}
 
 
 @router.put("/course-offerings/{offering_id}")

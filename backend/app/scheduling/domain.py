@@ -60,6 +60,7 @@ class RequiredSession:
     parallel_key: str | None = None
     cohort_id: str | None = None
     is_elective: bool = False
+    is_subgroup: bool = False
 
 
 @dataclass(frozen=True)

@@ -73,3 +73,36 @@ class CourseOfferingCreate(BaseModel):
             raise ValueError("Parallel electives require an elective group")
         return self
 
+
+class LabBatchAllocationCreate(BaseModel):
+    participant_group: str = Field(min_length=1, max_length=80)
+    faculty_ids: list[int] = Field(min_length=1)
+    room_id: int | None = None
+
+
+class LabOfferingBatchCreate(BaseModel):
+    semester_offering_id: int
+    code: str = Field(min_length=1, max_length=30)
+    name: str = Field(min_length=1, max_length=150)
+    sessions_per_week: int = Field(ge=1, le=10)
+    total_enrollment: int = Field(gt=0, le=500)
+    required_features: list[str] = []
+    elective_lab: bool = False
+    batches: list[LabBatchAllocationCreate] = Field(min_length=1, max_length=10)
+
+    @field_validator("required_features")
+    @classmethod
+    def normalize_required_features(cls, values: list[str]) -> list[str]:
+        return clean_capabilities(values)
+
+    @model_validator(mode="after")
+    def validate_batches(self):
+        expected = 2 if self.elective_lab else 4
+        if len(self.batches) != expected:
+            label = "elective lab" if self.elective_lab else "regular lab"
+            raise ValueError(f"A {label} must define exactly {expected} batches")
+        names = [" ".join(batch.participant_group.strip().split()).casefold() for batch in self.batches]
+        if len(set(names)) != len(names):
+            raise ValueError("Every lab batch must have a unique name")
+        return self
+

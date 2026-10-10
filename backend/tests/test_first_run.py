@@ -4,12 +4,12 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.auth import bootstrap_admin, bootstrap_status
 from app.api.master_data import faculty_availability, faculty_create, faculty_delete, faculty_update, replace_faculty_availability, reservation_create, reservation_delete, reservation_update, room_create, room_delete, room_update
-from app.api.setup import create_academic_year, create_course_offering, create_demo_data, create_department, create_institute, create_semester, create_term_cohorts, create_working_week, delete_course_offering, delete_semester, setup_status, update_course_offering, update_semester, validate_configuration
+from app.api.setup import create_academic_year, create_course_offering, create_demo_data, create_department, create_institute, create_lab_batch_offerings, create_semester, create_term_cohorts, create_working_week, delete_course_offering, delete_semester, setup_status, update_course_offering, update_semester, validate_configuration
 from app.db.session import Base
 from app.models.entities import AcademicYear, CourseOffering, Faculty, FixedReservation, SemesterOffering, User
 from app.schemas.auth import BootstrapAdminRequest
 from app.schemas.master_data import FacultyAvailabilitySlot, FacultyCreate, ReservationCreate, RoomCreate
-from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, SemesterCreate, TermCohortsCreate, WorkingWeekCreate
+from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, LabBatchAllocationCreate, LabOfferingBatchCreate, SemesterCreate, TermCohortsCreate, WorkingWeekCreate
 
 
 def empty_database():
@@ -111,3 +111,28 @@ def test_capability_names_allow_spaces_and_remove_case_insensitive_duplicates():
     assert room.features == ["Network Lab", "Electrical Machines"]
     subject = CourseOfferingCreate(semester_offering_id=1, code="EE-LAB", name="Network Lab", kind="lab", sessions_per_week=1, duration_periods=2, enrollment=20, faculty_ids=[1], eligible_room_ids=[], required_features=[" network   LAB "])
     assert subject.required_features == ["network LAB"]
+
+
+def test_admin_creates_every_regular_lab_batch_in_one_atomic_request():
+    db = empty_database(); actor = User(email="admin@college.edu", name="Admin", password_hash="x", role="admin")
+    department = create_department(DepartmentCreate(code="EE", name="Electrical Engineering"), db, actor)
+    year = create_academic_year(AcademicYearCreate(name="2026-27 Odd", term_type="odd"), db, actor)
+    faculty = faculty_create(FacultyCreate(faculty_code="F01", name="Teacher One", email="one@example.edu", home_department_id=department.id), db, actor)
+    lab = room_create(RoomCreate(code="NL", name="Network Lab", department_id=department.id, capacity=20, room_type="lab", features=["Network Lab"]), db, actor)
+    semester = create_semester(SemesterCreate(academic_year_id=year.id, department_id=department.id, semester_number=3, strength=61), db, actor)
+    body = LabOfferingBatchCreate(
+        semester_offering_id=semester.id,
+        code="EE3401",
+        name="Network Laboratory",
+        sessions_per_week=1,
+        total_enrollment=61,
+        required_features=["Network Lab"],
+        batches=[LabBatchAllocationCreate(participant_group=f"B{index}", faculty_ids=[faculty.id], room_id=lab.id) for index in range(1, 5)],
+    )
+
+    result = create_lab_batch_offerings(body, db, actor)
+
+    assert result["batch_count"] == 4
+    assert [item.participant_group_ids for item in result["items"]] == [["SEM-3-B1"], ["SEM-3-B2"], ["SEM-3-B3"], ["SEM-3-B4"]]
+    assert [item.enrollment for item in result["items"]] == [16, 15, 15, 15]
+    assert all(item.fixed_room_id == lab.id and item.duration_periods == 2 for item in result["items"])

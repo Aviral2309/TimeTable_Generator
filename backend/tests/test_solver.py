@@ -108,6 +108,27 @@ def test_lab_has_no_consecutive_window():
     assert result.status == "invalid_input"
 
 
+def test_distinct_lab_batches_can_run_in_parallel_without_blocking_each_other():
+    rooms = {
+        1: RoomResource(1, "L1", 30, "lab"),
+        2: RoomResource(2, "L2", 30, "lab"),
+    }
+    faculty = {
+        1: FacultyResource(1, "F1"),
+        2: FacultyResource(2, "F2"),
+    }
+    sessions = [
+        RequiredSession("b1", 1, 0, "NET-LAB", "lab", 2, 20, (1,), ("SEM-3-B1",), (1,), cohort_id="SEM-3", is_subgroup=True),
+        RequiredSession("b2", 2, 0, "NET-LAB", "lab", 2, 20, (2,), ("SEM-3-B2",), (2,), cohort_id="SEM-3", is_subgroup=True),
+    ]
+    problem = Problem(["Monday"], [0, 1], set(), rooms, faculty, sessions, [])
+
+    result = solve(problem)
+
+    assert result.status in {"optimal", "feasible"}
+    assert {(item.day, item.start_period) for item in result.assignments} == {("Monday", 0)}
+
+
 def test_validator_rejects_a_midday_lab_even_when_consecutive():
     problem, result, _ = solved_demo()
     index = next(i for i, a in enumerate(result.assignments) if a.session_id.startswith("EE504"))
