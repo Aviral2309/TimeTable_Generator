@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import {
@@ -9,6 +9,7 @@ import {
   Check,
   ChevronRight,
   Clock3,
+  CalendarClock,
   Download,
   FlaskConical,
   GraduationCap,
@@ -32,6 +33,7 @@ import {
   create,
   list,
   login,
+  loadDemoData,
   offerings,
   remove,
   removeOffering,
@@ -46,6 +48,8 @@ import {
   setupStatus,
   setupUpdate,
   setupUpdateRoot,
+  facultyAvailability,
+  saveFacultyAvailability,
   timetable,
   update,
   updateOffering,
@@ -252,6 +256,7 @@ const adminNav = [
   ["Dashboard", "/", LayoutDashboard],
   ["Start Setup", "/prepare", BookOpen],
   ["Faculty", "/faculty", Users],
+  ["Teacher Availability", "/availability", CalendarClock],
   ["Rooms & Labs", "/rooms", Building2],
   ["Reservations", "/reservations", Clock3],
   ["Generate", "/generate", Play],
@@ -346,6 +351,7 @@ function Shell({ user, logout }: { user: User; logout: () => void }) {
             path="faculty"
             element={<MasterList resource="faculty" title="Faculty" />}
           />
+          <Route path="availability" element={<AvailabilityPage />} />
           <Route
             path="rooms"
             element={
@@ -447,14 +453,14 @@ function Dashboard({ user }: { user: User }) {
         </NavLink>
       </PageTitle>
       <p className="lead">
-        No academic data is supplied automatically. Complete each step with your
-        institution's real records before generation.
+        Start with editable dummy data for a quick department presentation, or
+        enter the institution's real records manually before generation.
       </p>
       <div className="metric-grid">
         <Metric
           label="Semesters"
           value={String(s?.counts.semesters ?? 0)}
-          detail="3 required"
+          detail={`${s?.active_year?.term_type === "even" ? "2, 4, 6" : "3, 5, 7"} required`}
           icon={<GraduationCap />}
         />
         <Metric
@@ -520,6 +526,7 @@ function Dashboard({ user }: { user: User }) {
 
 function Preparation() {
   const qc = useQueryClient();
+  const [demoTerm, setDemoTerm] = useState<"odd" | "even">("odd");
   const statusQ = useQuery({
     queryKey: ["setup-status"],
     queryFn: setupStatus,
@@ -557,6 +564,11 @@ function Preparation() {
     qc.invalidateQueries({ queryKey: ["setup-options"] });
     qc.invalidateQueries({ queryKey: ["semesters"] });
   };
+  const demo = useMutation({
+    mutationFn: () => loadDemoData(demoTerm),
+    onSuccess: refresh,
+  });
+  const setupIsEmpty = !!statusQ.data && ["institutes", "departments", "academic_years", "time_slots", "faculty", "rooms", "semesters"].every((key) => !statusQ.data!.counts[key]);
   const deleteSemester = useMutation({
     mutationFn: (id: number) => setupRemove("semesters", id),
     onSuccess: () => {
@@ -607,6 +619,26 @@ function Preparation() {
         Enter data in this order. Semester and subject records can be edited or
         removed before generation.
       </p>
+      {setupIsEmpty && (
+        <div className="card demo-starter">
+          <div>
+            <p className="eyebrow">Presentation shortcut</p>
+            <h2>Load editable dummy data</h2>
+            <p>Creates faculty, rooms, the selected three semesters, three parallel electives, a co-taught subject, sample teacher availability, and a fixed first-year electrical-lab reservation.</p>
+          </div>
+          <label>
+            Academic term
+            <select value={demoTerm} onChange={(event) => setDemoTerm(event.target.value as "odd" | "even")}>
+              <option value="odd">Odd · Semesters 3, 5, 7</option>
+              <option value="even">Even · Semesters 2, 4, 6</option>
+            </select>
+          </label>
+          <button className="primary" disabled={demo.isPending} onClick={() => demo.mutate()}>
+            {demo.isPending ? "Loading…" : "Load dummy setup"}
+          </button>
+          {demo.error && <div className="error">{errorText(demo.error)}</div>}
+        </div>
+      )}
       <SetupChecklist status={statusQ.data} />
       <div className="setup-section">
         <h2>1. Academic foundation</h2>
@@ -633,12 +665,12 @@ function Preparation() {
           {!statusQ.data?.counts.academic_years ? (
             <QuickForm
               title="Academic year"
-              fields={[["name", "Example: 2026-27"]]}
+              fields={[["name", "Example: 2026-27 Odd"], ["term_type", "Academic term", "term"]]}
               submit={(data) => setupCreate("academic-years", data)}
               done={refresh}
             />
           ) : (
-            <CompleteCard title={`Academic year ${statusQ.data.active_year?.name}`} onEdit={() => setFoundationEdit({ resource: "academic-years", item: statusQ.data?.active_year, fields: [["name", "Academic year"]] })} onDelete={() => window.confirm("Delete this academic year?") && deleteFoundation.mutate({resource:"academic-years",id:statusQ.data!.active_year!.id})} />
+            <CompleteCard title={`${statusQ.data.active_year?.name} · ${statusQ.data.active_year?.term_type?.toUpperCase()} term`} onEdit={() => setFoundationEdit({ resource: "academic-years", item: statusQ.data?.active_year, fields: [["name", "Academic year"], ["term_type", "Academic term", "term"]] })} onDelete={() => window.confirm("Delete this academic year?") && deleteFoundation.mutate({resource:"academic-years",id:statusQ.data!.active_year!.id})} />
           )}{" "}
           {!statusQ.data?.counts.time_slots ? (
             <WorkingWeekForm done={refresh} />
@@ -654,7 +686,8 @@ function Preparation() {
             <h2>2. Semester cohorts and subjects</h2>
             <p className="muted">
               First add faculty and rooms from the side menu. Then create
-              exactly three combined cohorts.
+              the three combined cohorts for the active Odd or Even term. Add
+              as many elective alternatives as required using the same elective group.
             </p>
           </div>
           <button
@@ -769,6 +802,7 @@ function Preparation() {
       {(addingSemester || editingSemester) && yearId && optionsQ.data && (
         <SemesterForm
           yearId={yearId}
+          termType={statusQ.data?.active_year?.term_type || "odd"}
           options={optionsQ.data}
           initial={editingSemester}
           close={() => { setAddingSemester(false); setEditingSemester(null); }}
@@ -814,7 +848,7 @@ function CompleteCard({ title, onEdit, onDelete }: { title: string; onEdit?: () 
 function FoundationForm({resource,item,fields,close,done}:{resource:string;item:any;fields:string[][];close:()=>void;done:()=>void}){
   const [form,setForm]=useState<any>(Object.fromEntries(fields.map(([key])=>[key,item[key]])));
   const mutation=useMutation({mutationFn:()=>setupUpdate(resource,item.id,form),onSuccess:()=>{done();close()}});
-  return <Modal title={`Edit ${resource.replace("academic-years","academic year").replace("institutes","institute").replace("departments","department")}`} close={close} submit={()=>mutation.mutate()} pending={mutation.isPending} error={mutation.error}>{fields.map(([key,label])=><label key={key}>{label}<input required value={form[key]||""} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}</Modal>
+  return <Modal title={`Edit ${resource.replace("academic-years","academic year").replace("institutes","institute").replace("departments","department")}`} close={close} submit={()=>mutation.mutate()} pending={mutation.isPending} error={mutation.error}>{fields.map(([key,label,type])=><label key={key}>{label}{type === "term" ? <select value={form[key] || "odd"} onChange={e=>setForm({...form,[key]:e.target.value})}><option value="odd">Odd · Semesters 3, 5, 7</option><option value="even">Even · Semesters 2, 4, 6</option></select> : <input required value={form[key]||""} onChange={e=>setForm({...form,[key]:e.target.value})}/>}</label>)}</Modal>
 }
 function EmptyState({ text }: { text: string }) {
   return (
@@ -835,7 +869,7 @@ function QuickForm({
   submit: (d: any) => Promise<any>;
   done: () => void;
 }) {
-  const [form, setForm] = useState<Record<string, string>>({});
+  const [form, setForm] = useState<Record<string, string>>(() => Object.fromEntries(fields.filter(([, , type]) => type === "term").map(([key]) => [key, "odd"])));
   const mutation = useMutation({
     mutationFn: () => submit(form),
     onSuccess: () => {
@@ -852,14 +886,14 @@ function QuickForm({
       }}
     >
       <h3>{title}</h3>
-      {fields.map(([key, label]) => (
+      {fields.map(([key, label, type]) => (
         <label key={key}>
           {label}
-          <input
+          {type === "term" ? <select value={form[key] || "odd"} onChange={(e) => setForm({ ...form, [key]: e.target.value })}><option value="odd">Odd · Semesters 3, 5, 7</option><option value="even">Even · Semesters 2, 4, 6</option></select> : <input
             required
             value={form[key] || ""}
             onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-          />
+          />}
         </label>
       ))}
       {mutation.error && (
@@ -934,11 +968,13 @@ function WorkingWeekForm({ done, initial, close }: { done: () => void; initial?:
 }
 function SemesterForm({
   yearId,
+  termType,
   options,
   initial,
   close,
 }: {
   yearId: number;
+  termType: "odd" | "even";
   options: any;
   initial?: any;
   close: () => void;
@@ -952,7 +988,7 @@ function SemesterForm({
     strength: initial.strength,
     home_room_id: initial.home_room_id,
     home_room_policy: initial.home_room_policy,
-  } : { academic_year_id: yearId, department_id: options.departments[0]?.id, semester_number: 3, strength: 60, home_room_id: rooms[0]?.id, home_room_policy: "hard" });
+  } : { academic_year_id: yearId, department_id: options.departments[0]?.id, semester_number: termType === "odd" ? 3 : 2, strength: 60, home_room_id: rooms[0]?.id, home_room_policy: "hard" });
   const mutation = useMutation({
     mutationFn: () => initial ? setupUpdate("semesters", initial.id, form) : setupCreate("semesters", form),
     onSuccess: () => {
@@ -992,7 +1028,7 @@ function SemesterForm({
             setForm({ ...form, semester_number: Number(e.target.value) })
           }
         >
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+          {(termType === "odd" ? [3, 5, 7] : [2, 4, 6]).map((n) => (
             <option key={n} value={n}>
               Semester {roman(n)}
             </option>
@@ -1078,7 +1114,7 @@ function Modal({
 
 function roman(n: number) {
   return (
-    ({ 3: "III", 5: "V", 7: "VII" } as Record<number, string>)[n] || String(n)
+    ({ 1: "I", 2: "II", 3: "III", 4: "IV", 5: "V", 6: "VI", 7: "VII", 8: "VIII" } as Record<number, string>)[n] || String(n)
   );
 }
 function facultyNames(options: any, ids: number[]) {
@@ -1213,19 +1249,23 @@ function SubjectForm({
           onChange={(e) => set("enrollment", Number(e.target.value))}
         />
       </label>
-      <label>
-        Faculty
-        <select
-          value={form.faculty_ids[0]}
-          onChange={(e) => set("faculty_ids", [Number(e.target.value)])}
-        >
-          {options.faculty.map((f: any) => (
-            <option value={f.id} key={f.id}>
+      <fieldset className="multi-select-field">
+        <legend>Teaching faculty · select one or more</legend>
+        <div className="check-list">
+          {options.faculty.map((f: any) => {
+            const checked = form.faculty_ids.includes(f.id);
+            return <label className="checkbox" key={f.id}>
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => set("faculty_ids", checked ? form.faculty_ids.filter((id: number) => id !== f.id) : [...form.faculty_ids, f.id])}
+              />
               {f.faculty_code} · {f.name}
-            </option>
-          ))}
-        </select>
-      </label>
+            </label>;
+          })}
+        </div>
+        {!form.faculty_ids.length && <small className="field-error">Select at least one teacher.</small>}
+      </fieldset>
       <label>
         {form.kind === "lab" ? "Laboratory" : "Eligible room"}
         <select
@@ -1336,7 +1376,7 @@ function Generate() {
               </strong>
             </span>
             <span>
-              Cohorts<strong>{ids.length}/3 configured</strong>
+              Academic term<strong>{statusQ.data?.active_year?.term_type?.toUpperCase() || "Not configured"} · {statusQ.data?.active_year?.term_type === "even" ? "Semesters 2, 4, 6" : "Semesters 3, 5, 7"}</strong>
             </span>
             <span>
               Source<strong>Admin-entered records only</strong>
@@ -1545,6 +1585,47 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
   );
 }
 
+function AvailabilityPage() {
+  const optionsQ = useQuery({ queryKey: ["setup-options"], queryFn: setupOptions });
+  const [facultyId, setFacultyId] = useState<number | null>(null);
+  const selectedId = facultyId ?? optionsQ.data?.faculty[0]?.id ?? null;
+  const availabilityQ = useQuery({
+    queryKey: ["faculty-availability", selectedId],
+    queryFn: () => facultyAvailability(selectedId!),
+    enabled: !!selectedId,
+  });
+  const [unavailable, setUnavailable] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setUnavailable(new Set((availabilityQ.data?.items || []).filter((item: any) => !item.available).map((item: any) => `${item.day}:${item.period_index}`)));
+  }, [availabilityQ.data]);
+  const save = useMutation({
+    mutationFn: () => saveFacultyAvailability(selectedId!, Array.from(unavailable).map((key) => {
+      const [day, period] = key.split(":");
+      return { day, period_index: Number(period), available: false, preference: 0 };
+    })),
+  });
+  const slots = optionsQ.data?.time_slots || [];
+  const periods = Array.from(new Map(slots.map((slot: any) => [slot.period_index, slot])).values()).sort((a: any, b: any) => a.period_index - b.period_index) as any[];
+  const days = DAYS.filter((day) => slots.some((slot: any) => slot.day === day));
+  const toggle = (key: string) => setUnavailable((current) => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  return <section className="page">
+    <PageTitle eyebrow="Manual constraints" title="Teacher availability">
+      <button className="primary" disabled={!selectedId || save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save availability"}</button>
+    </PageTitle>
+    <p className="lead">Use this for Electrical and other-department teachers. Checked periods are available; unchecked periods are hard constraints that the generator will never use.</p>
+    {!optionsQ.data?.faculty.length ? <EmptyState text="Add faculty before configuring availability." /> : <>
+      <div className="card availability-toolbar"><label>Teacher<select value={selectedId || ""} onChange={(event) => setFacultyId(Number(event.target.value))}>{optionsQ.data.faculty.map((faculty: any) => <option key={faculty.id} value={faculty.id}>{faculty.faculty_code} · {faculty.name} · {optionsQ.data.departments.find((department: any) => department.id === faculty.home_department_id)?.code}</option>)}</select></label><span>{unavailable.size} unavailable period{unavailable.size === 1 ? "" : "s"}</span></div>
+      <div className="card table-card availability-grid"><table><thead><tr><th>Time</th>{days.map((day) => <th key={day}>{day}</th>)}</tr></thead><tbody>{periods.map((period: any) => <tr key={period.period_index}><th>{period.start_time}–{period.end_time}</th>{days.map((day) => {const slot = slots.find((item: any) => item.day === day && item.period_index === period.period_index); const key = `${day}:${period.period_index}`; return <td key={day} className={slot?.blocked ? "blocked-slot" : unavailable.has(key) ? "unavailable-slot" : "available-slot"}>{slot?.blocked ? "Lunch" : <label className="slot-check"><input type="checkbox" checked={!unavailable.has(key)} onChange={() => toggle(key)} /><span>{unavailable.has(key) ? "Unavailable" : "Available"}</span></label>}</td>;})}</tr>)}</tbody></table></div>
+    </>}
+    {save.isSuccess && <div className="validation-ok"><ShieldCheck />Availability saved and will be enforced during generation.</div>}
+    {(optionsQ.error || availabilityQ.error || save.error) && <div className="error">{errorText(optionsQ.error || availabilityQ.error || save.error)}</div>}
+  </section>;
+}
+
 function MasterList({ resource, title }: { resource: string; title: string }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: [resource], queryFn: () => list(resource) });
@@ -1679,8 +1760,10 @@ function CreateForm({
             academic_year_id: year?.id,
             day: "Monday",
             start_period: 0,
-            duration_periods: 1,
+            duration_periods: 2,
             room_id: firstRoom?.id,
+            faculty_id: null,
+            participant_group_id: "FIRST-YEAR-EE",
             description: "",
           };
   const editable = initial ? Object.fromEntries(Object.keys(defaults).map((key) => [key, initial[key] ?? defaults[key]])) : defaults;
@@ -1707,11 +1790,12 @@ function CreateForm({
       "start_period",
       "duration_periods",
       "room_id",
+      "faculty_id",
     ];
     setForm({
       ...form,
       [key]: numeric.includes(key)
-        ? Number(value)
+        ? value === "" ? null : Number(value)
         : key === "features"
           ? value
               .split(",")
@@ -1764,6 +1848,11 @@ function CreateForm({
                 </option>
               ))}
             </select>
+          ) : key === "faculty_id" ? (
+            <select value={form[key] || ""} onChange={(e) => updateField(key, e.target.value)}>
+              <option value="">No faculty-specific block</option>
+              {options.faculty.map((faculty: any) => <option key={faculty.id} value={faculty.id}>{faculty.faculty_code} · {faculty.name}</option>)}
+            </select>
           ) : key === "room_type" ? (
             <select
               value={form[key]}
@@ -1783,7 +1872,7 @@ function CreateForm({
             </select>
           ) : (
             <input
-              required={!["features"].includes(key)}
+              required={!["features", "faculty_id", "participant_group_id"].includes(key)}
               type={
                 typeof form[key] === "number"
                   ? "number"

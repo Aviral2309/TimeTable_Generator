@@ -52,6 +52,7 @@ class AcademicYear(Base):
     __tablename__ = "academic_years"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(30), unique=True)
+    term_type: Mapped[str] = mapped_column(String(10), default="odd")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 

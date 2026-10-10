@@ -12,6 +12,11 @@ class DepartmentCreate(BaseModel):
 
 class AcademicYearCreate(BaseModel):
     name: str = Field(min_length=4, max_length=30)
+    term_type: str = Field("odd", pattern="^(odd|even)$")
+
+
+class DemoDataCreate(BaseModel):
+    term_type: str = Field("odd", pattern="^(odd|even)$")
 
 
 class WorkingWeekCreate(BaseModel):

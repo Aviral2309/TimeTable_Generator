@@ -3,12 +3,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.core.security import require_roles
 from app.db.session import get_db
-from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, FixedReservation, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, TimetableSession, User
-from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DepartmentCreate, InstituteCreate, SemesterCreate, WorkingWeekCreate
+from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, FacultyAvailability, FixedReservation, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, TimetableSession, User
+from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, SemesterCreate, WorkingWeekCreate
 from app.scheduling.database_problem import build_database_problem
 from app.scheduling.preprocessing import validate_problem
 
 router = APIRouter(prefix="/api/setup", tags=["Semester Preparation"])
+
+TERM_SEMESTERS = {"odd": {3, 5, 7}, "even": {2, 4, 6}}
 
 
 @router.get("/status")
@@ -34,8 +36,8 @@ def setup_status(db: Session = Depends(get_db), _: User = Depends(require_roles(
         {"key": "academic", "label": "Academic setup", "complete": counts["institutes"] > 0 and counts["departments"] > 0 and counts["academic_years"] > 0 and counts["time_slots"] > 0},
         {"key": "faculty", "label": "Faculty", "complete": counts["faculty"] > 0},
         {"key": "rooms", "label": "Rooms & laboratories", "complete": counts["rooms"] > 0},
-        {"key": "semesters", "label": "Three semester cohorts", "complete": counts["semesters"] == 3},
-        {"key": "subjects", "label": "Subjects & allocations", "complete": counts["semesters"] == 3 and semesters_with_subjects == 3},
+        {"key": "semesters", "label": f"{(active_year.term_type if active_year else 'odd').title()} term semesters", "complete": bool(active_year) and {s.semester_number for s in configured} == TERM_SEMESTERS[active_year.term_type]},
+        {"key": "subjects", "label": "Subjects & allocations", "complete": bool(active_year) and {s.semester_number for s in configured} == TERM_SEMESTERS[active_year.term_type] and semesters_with_subjects == 3},
     ]
     return {"counts": counts, "steps": steps, "ready_for_validation": all(step["complete"] for step in steps), "active_year": active_year}
 
@@ -84,14 +86,17 @@ def delete_department(item_id: int, db: Session = Depends(get_db), _: User = Dep
 @router.post("/academic-years", status_code=201)
 def create_academic_year(body: AcademicYearCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     for year in db.scalars(select(AcademicYear)).all(): year.active = False
-    item = AcademicYear(name=body.name.strip(), active=True); db.add(item); db.commit(); db.refresh(item); return item
+    item = AcademicYear(name=body.name.strip(), term_type=body.term_type, active=True); db.add(item); db.commit(); db.refresh(item); return item
 
 
 @router.put("/academic-years/{item_id}")
 def update_academic_year(item_id: int, body: AcademicYearCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     item = db.get(AcademicYear, item_id)
     if not item: raise HTTPException(404, "Academic year not found")
-    item.name = body.name.strip(); db.commit(); db.refresh(item); return item
+    existing_semesters = db.scalars(select(SemesterOffering).where(SemesterOffering.academic_year_id == item_id)).all()
+    if existing_semesters and any(s.semester_number not in TERM_SEMESTERS[body.term_type] for s in existing_semesters):
+        raise HTTPException(409, "Remove semesters that do not belong to the selected Odd/Even term before changing it")
+    item.name = body.name.strip(); item.term_type = body.term_type; db.commit(); db.refresh(item); return item
 
 
 @router.delete("/academic-years/{item_id}", status_code=204)
@@ -153,7 +158,9 @@ def semesters(academic_year_id: int, db: Session = Depends(get_db), _: User = De
 
 @router.post("/semesters", status_code=201)
 def create_semester(body: SemesterCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
-    if not db.get(AcademicYear, body.academic_year_id): raise HTTPException(422, "Select a valid academic year")
+    year = db.get(AcademicYear, body.academic_year_id)
+    if not year: raise HTTPException(422, "Select a valid academic year")
+    if body.semester_number not in TERM_SEMESTERS[year.term_type]: raise HTTPException(422, f"{year.term_type.title()} term allows semesters {sorted(TERM_SEMESTERS[year.term_type])}")
     if not db.get(Department, body.department_id): raise HTTPException(422, "Select a valid department")
     room = db.get(Room, body.home_room_id)
     if not room or room.room_type != "theory" or room.capacity < body.strength:
@@ -165,6 +172,8 @@ def create_semester(body: SemesterCreate, db: Session = Depends(get_db), _: User
 def update_semester(item_id: int, body: SemesterCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     item = db.get(SemesterOffering, item_id)
     if not item: raise HTTPException(404, "Semester configuration not found")
+    year = db.get(AcademicYear, body.academic_year_id)
+    if not year or body.semester_number not in TERM_SEMESTERS[year.term_type]: raise HTTPException(422, "Semester does not belong to the selected Odd/Even term")
     room = db.get(Room, body.home_room_id)
     if not room or room.room_type != "theory" or room.capacity < body.strength: raise HTTPException(422, "Home classroom must be a theory room with sufficient capacity")
     for key, value in body.model_dump().items(): setattr(item, key, value)
@@ -228,8 +237,12 @@ def delete_course_offering(offering_id: int, db: Session = Depends(get_db), _: U
 def validate_configuration(semester_ids: list[int], academic_year_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     semesters = db.scalars(select(SemesterOffering).where(SemesterOffering.id.in_(semester_ids))).all()
     errors: list[dict] = []
-    if len(semester_ids) != 3:
-        errors.append({"code": "semester_count", "message": "Select exactly three semester cohorts for joint generation."})
+    year = db.get(AcademicYear, academic_year_id)
+    expected = TERM_SEMESTERS.get(year.term_type, set()) if year else set()
+    if not year:
+        errors.append({"code": "academic_year", "message": "Select a valid academic term."})
+    elif {s.semester_number for s in semesters} != expected:
+        errors.append({"code": "semester_set", "message": f"{year.term_type.title()} term must contain semesters {', '.join(map(str, sorted(expected)))}."})
     if len({s.semester_number for s in semesters}) != len(semesters):
         errors.append({"code": "duplicate_semester", "message": "Each selected semester number must be unique; sections are not used."})
     for semester in semesters:
@@ -239,4 +252,78 @@ def validate_configuration(semester_ids: list[int], academic_year_id: int, db: S
         try: errors.extend(validate_problem(build_database_problem(db, academic_year_id, semester_ids)))
         except ValueError as exc: errors.append({"code": "configuration", "message": str(exc)})
     return {"valid": not errors, "errors": errors, "semester_ids": semester_ids}
+
+
+@router.post("/demo-data", status_code=201)
+def create_demo_data(body: DemoDataCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    populated = any(db.scalar(select(func.count()).select_from(model)) for model in (Institute, Department, AcademicYear, Faculty, Room, TimeSlot, SemesterOffering))
+    if populated: raise HTTPException(409, "Demo data can only be loaded into an empty academic setup")
+
+    institute = Institute(name="Shri G. S. Institute of Technology & Science, Indore")
+    electrical = Department(code="EE", name="Electrical Engineering")
+    humanities = Department(code="HU", name="Humanities")
+    science = Department(code="AS", name="Applied Sciences")
+    year = AcademicYear(name=f"2026-27 {body.term_type.title()}", term_type=body.term_type, active=True)
+    db.add_all([institute, electrical, humanities, science, year]); db.flush()
+
+    faculty_specs = [
+        ("AD", "Dr. A. Deshmukh", electrical.id), ("SS", "Dr. S. Sharma", electrical.id),
+        ("HKV", "Dr. H. K. Verma", electrical.id), ("AP", "Prof. A. Patel", electrical.id),
+        ("RR", "Dr. R. Rao", electrical.id), ("UV", "Prof. U. Verma", electrical.id),
+        ("SG", "Dr. S. Gupta", electrical.id), ("MPSC", "Prof. M. P. Singh", electrical.id),
+        ("HUM", "Dr. N. Joshi", humanities.id), ("PHY", "Dr. P. Mehta", science.id),
+    ]
+    teachers = []
+    for code, name, department_id in faculty_specs:
+        teacher = Faculty(faculty_code=code, name=name, email=f"{code.lower()}@demo.edu", home_department_id=department_id, weekly_limit=18, daily_limit=6, max_consecutive=3)
+        db.add(teacher); teachers.append(teacher)
+    db.flush()
+    by_code = {teacher.faculty_code: teacher for teacher in teachers}
+
+    room_specs = [
+        ("201", "Semester Classroom 201", "theory", 80, []),
+        ("205", "Semester Classroom 205", "theory", 80, []),
+        ("207", "Semester Classroom 207", "theory", 80, []),
+        ("EEL-1", "Electrical Machines Laboratory", "lab", 32, ["machines"]),
+        ("EEL-2", "Power Electronics Laboratory", "lab", 32, ["power-benches"]),
+        ("COMP-LAB", "Computer Laboratory", "lab", 32, ["computers"]),
+    ]
+    rooms = []
+    for code, name, kind, capacity, features in room_specs:
+        room = Room(code=code, name=name, department_id=electrical.id, capacity=capacity, room_type=kind, features=features)
+        db.add(room); rooms.append(room)
+    db.flush()
+    theory_rooms = rooms[:3]; lab_rooms = rooms[3:]
+
+    for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]:
+        for index in range(8):
+            hour = 9 + index
+            db.add(TimeSlot(day=day, period_index=index, start_time=f"{hour:02}:00", end_time=f"{hour + 1:02}:00", blocked=index == 3))
+
+    semesters = []
+    for index, semester_number in enumerate(sorted(TERM_SEMESTERS[body.term_type])):
+        semester = SemesterOffering(academic_year_id=year.id, department_id=electrical.id, semester_number=semester_number, section="ALL", strength=60, home_room_id=theory_rooms[index].id, home_room_policy="hard")
+        db.add(semester); semesters.append(semester)
+    db.flush()
+
+    teacher_pairs = [("AD", "SS"), ("HKV", "AP"), ("RR", "UV")]
+    for index, semester in enumerate(semesters):
+        number = semester.semester_number
+        primary, secondary = teacher_pairs[index]
+        common = dict(semester_offering_id=semester.id, enrollment=60, participant_group_ids=[f"SEM-{number}"], eligible_room_ids=[semester.home_room_id], required_features=[])
+        db.add(CourseOffering(code=f"EE{number}01", name="Electrical Engineering Core I", kind="theory", sessions_per_week=3, duration_periods=1, faculty_ids=[by_code[primary].id], **common))
+        db.add(CourseOffering(code=f"EE{number}02", name="Electrical Engineering Core II", kind="theory", sessions_per_week=3, duration_periods=1, faculty_ids=[by_code[primary].id, by_code[secondary].id], **common))
+        db.add(CourseOffering(semester_offering_id=semester.id, code=f"EE{number}L1", name="Electrical Engineering Laboratory", kind="lab", sessions_per_week=1, duration_periods=2, enrollment=30, faculty_ids=[by_code[secondary].id], participant_group_ids=[f"SEM-{number}-B1"], eligible_room_ids=[lab_rooms[index % len(lab_rooms)].id], required_features=[]))
+
+    senior = semesters[-1]
+    for offset, (code, teacher_code) in enumerate([("EL-A", "SG"), ("EL-B", "MPSC"), ("EL-C", "HUM")], 1):
+        db.add(CourseOffering(semester_offering_id=senior.id, code=f"{code}{senior.semester_number}", name=f"Elective Option {offset}", kind="elective", sessions_per_week=2, duration_periods=1, enrollment=20, faculty_ids=[by_code[teacher_code].id], participant_group_ids=[f"SEM-{senior.semester_number}-E{offset}"], eligible_room_ids=[room.id for room in theory_rooms], required_features=[], elective_group=f"SEM-{senior.semester_number}-ELECTIVE", parallel_elective=True))
+
+    first_year_lab = lab_rooms[0]
+    db.add(FixedReservation(academic_year_id=year.id, day="Monday", start_period=0, duration_periods=2, room_id=first_year_lab.id, participant_group_id="FIRST-YEAR-EE", description="Fixed first-year Electrical Engineering laboratory"))
+    for teacher_code, day, periods in [("HUM", "Monday", [0, 1, 2]), ("PHY", "Friday", [4, 5, 6, 7])]:
+        for period in periods:
+            db.add(FacultyAvailability(faculty_id=by_code[teacher_code].id, day=day, period_index=period, available=False, preference=0))
+    db.commit()
+    return {"loaded": True, "term_type": body.term_type, "semester_numbers": sorted(TERM_SEMESTERS[body.term_type]), "faculty": len(teachers), "rooms": len(rooms)}
 

@@ -3,13 +3,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.auth import bootstrap_admin, bootstrap_status
-from app.api.master_data import faculty_create, faculty_delete, faculty_update, reservation_create, reservation_delete, reservation_update, room_create, room_delete, room_update
-from app.api.setup import create_academic_year, create_course_offering, create_department, create_institute, create_semester, create_working_week, delete_course_offering, delete_semester, setup_status, update_course_offering, update_semester
+from app.api.master_data import faculty_availability, faculty_create, faculty_delete, faculty_update, replace_faculty_availability, reservation_create, reservation_delete, reservation_update, room_create, room_delete, room_update
+from app.api.setup import create_academic_year, create_course_offering, create_demo_data, create_department, create_institute, create_semester, create_working_week, delete_course_offering, delete_semester, setup_status, update_course_offering, update_semester, validate_configuration
 from app.db.session import Base
-from app.models.entities import User
+from app.models.entities import AcademicYear, CourseOffering, Faculty, FixedReservation, SemesterOffering, User
 from app.schemas.auth import BootstrapAdminRequest
-from app.schemas.master_data import FacultyCreate, ReservationCreate, RoomCreate
-from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DepartmentCreate, InstituteCreate, SemesterCreate, WorkingWeekCreate
+from app.schemas.master_data import FacultyAvailabilitySlot, FacultyCreate, ReservationCreate, RoomCreate
+from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, SemesterCreate, WorkingWeekCreate
 
 
 def empty_database():
@@ -71,3 +71,27 @@ def test_admin_can_create_update_and_delete_operational_records():
     assert update_course_offering(course.id, course_body.model_copy(update={"name": "Network Theory"}), db, actor).name == "Network Theory"
     delete_course_offering(course.id, db, actor); delete_semester(semester.id, db, actor)
     faculty_delete(faculty.id, db, actor); room_delete(room.id, db, actor)
+
+
+def test_demo_data_supports_terms_electives_coteaching_and_constraints():
+    db = empty_database(); actor = User(email="admin@college.edu", name="Admin", password_hash="x", role="admin")
+    result = create_demo_data(DemoDataCreate(term_type="even"), db, actor)
+    assert result["semester_numbers"] == [2, 4, 6]
+    year = db.query(AcademicYear).one()
+    assert year.term_type == "even"
+    assert {item.semester_number for item in db.query(SemesterOffering).all()} == {2, 4, 6}
+    electives = db.query(CourseOffering).filter(CourseOffering.kind == "elective").all()
+    assert len(electives) == 3
+    assert len({item.elective_group for item in electives}) == 1
+    assert all(item.parallel_elective for item in electives)
+    assert any(len(item.faculty_ids) > 1 for item in db.query(CourseOffering).all())
+    reservation = db.query(FixedReservation).one()
+    assert reservation.participant_group_id == "FIRST-YEAR-EE"
+    assert reservation.duration_periods == 2
+    external_teacher = db.query(Faculty).filter(Faculty.faculty_code == "HUM").one()
+    assert faculty_availability(external_teacher.id, db, actor)["items"]
+    replaced = replace_faculty_availability(external_teacher.id, [FacultyAvailabilitySlot(day="Tuesday", period_index=2, available=False)], db, actor)
+    assert len(replaced["items"]) == 1 and replaced["items"][0].day == "Tuesday"
+    assert setup_status(db, actor)["ready_for_validation"] is True
+    semester_ids = [item.id for item in db.query(SemesterOffering).all()]
+    assert validate_configuration(semester_ids, year.id, db, actor)["valid"] is True

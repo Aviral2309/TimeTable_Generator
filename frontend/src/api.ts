@@ -29,6 +29,7 @@ export type TimetableData = {
   status: string;
   institute_name: string;
   academic_year: string;
+  academic_term: "odd" | "even";
   semesters: any[];
   subjects: any[];
   time_slots: any[];
@@ -38,7 +39,7 @@ export type SetupStatus = {
   counts: Record<string, number>;
   steps: { key: string; label: string; complete: boolean }[];
   ready_for_validation: boolean;
-  active_year: { id: number; name: string } | null;
+  active_year: { id: number; name: string; term_type: "odd" | "even" } | null;
 };
 const API = "/api";
 export const token = () => localStorage.getItem("timetable_token");
@@ -114,6 +115,18 @@ export const setupUpdateRoot = (resource: string, data: unknown) =>
   });
 export const setupRemoveRoot = (resource: string) =>
   request(`/setup/${resource}`, { method: "DELETE" });
+export const loadDemoData = (termType: "odd" | "even") =>
+  request<any>("/setup/demo-data", {
+    method: "POST",
+    body: JSON.stringify({ term_type: termType }),
+  });
+export const facultyAvailability = (facultyId: number) =>
+  request<{ items: any[] }>(`/faculty/${facultyId}/availability`);
+export const saveFacultyAvailability = (facultyId: number, slots: any[]) =>
+  request<{ items: any[] }>(`/faculty/${facultyId}/availability`, {
+    method: "PUT",
+    body: JSON.stringify(slots),
+  });
 export const offerings = (semesterId: number) =>
   request<{ items: any[] }>(
     `/setup/course-offerings?semester_offering_id=${semesterId}`,

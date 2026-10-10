@@ -30,3 +30,10 @@ class ReservationCreate(BaseModel):
     participant_group_id: str | None = None
     description: str
 
+
+class FacultyAvailabilitySlot(BaseModel):
+    day: str
+    period_index: int = Field(ge=0, le=11)
+    available: bool = True
+    preference: int = Field(0, ge=-5, le=5)
+

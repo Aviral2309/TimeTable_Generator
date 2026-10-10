@@ -3,8 +3,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.core.security import require_roles
 from app.db.session import get_db
-from app.models.entities import CourseOffering, Faculty, FixedReservation, Room, SemesterOffering, TimetableSession, User
-from app.schemas.master_data import FacultyCreate, ReservationCreate, RoomCreate
+from app.models.entities import CourseOffering, Faculty, FacultyAvailability, FixedReservation, Room, SemesterOffering, TimetableSession, TimeSlot, User
+from app.schemas.master_data import FacultyAvailabilitySlot, FacultyCreate, ReservationCreate, RoomCreate
 
 router = APIRouter(prefix="/api", tags=["Master Data"])
 
@@ -42,6 +42,29 @@ def faculty_delete(item_id: int, db: Session = Depends(get_db), _: User = Depend
     has_login = db.scalar(select(User.id).where(User.faculty_id == item_id).limit(1))
     if used or reserved or has_login: raise HTTPException(409, "Faculty is assigned to a subject, reservation, or login. Remove those references first.")
     db.delete(item); db.commit(); return Response(status_code=204)
+
+
+@router.get("/faculty/{item_id}/availability")
+def faculty_availability(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    if not db.get(Faculty, item_id): raise HTTPException(404, "Faculty record not found")
+    items = db.scalars(select(FacultyAvailability).where(FacultyAvailability.faculty_id == item_id).order_by(FacultyAvailability.day, FacultyAvailability.period_index)).all()
+    return {"items": items}
+
+
+@router.put("/faculty/{item_id}/availability")
+def replace_faculty_availability(item_id: int, body: list[FacultyAvailabilitySlot], db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    if not db.get(Faculty, item_id): raise HTTPException(404, "Faculty record not found")
+    configured = {(slot.day, slot.period_index) for slot in db.scalars(select(TimeSlot)).all()}
+    invalid = [(slot.day, slot.period_index) for slot in body if (slot.day, slot.period_index) not in configured]
+    if invalid: raise HTTPException(422, {"invalid_time_slots": invalid})
+    keys = [(slot.day, slot.period_index) for slot in body]
+    if len(keys) != len(set(keys)): raise HTTPException(422, "Each day and period can appear only once")
+    db.query(FacultyAvailability).filter(FacultyAvailability.faculty_id == item_id).delete()
+    for slot in body:
+        if not slot.available or slot.preference:
+            db.add(FacultyAvailability(faculty_id=item_id, **slot.model_dump()))
+    db.commit()
+    return faculty_availability(item_id, db, _)
 
 
 @router.get("/rooms")
