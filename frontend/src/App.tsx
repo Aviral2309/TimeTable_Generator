@@ -80,6 +80,11 @@ function errorText(error: unknown) {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(storedUser);
+  useEffect(() => {
+    const clearExpiredSession = () => setUser(null);
+    window.addEventListener("timetable:unauthorized", clearExpiredSession);
+    return () => window.removeEventListener("timetable:unauthorized", clearExpiredSession);
+  }, []);
   const bootstrap = useQuery({
     queryKey: ["bootstrap"],
     queryFn: bootstrapStatus,
@@ -942,9 +947,11 @@ function WorkingWeekForm({ done, initial, close }: { done: () => void; initial?:
         First class hour
         <input
           type="number"
+          min="0"
+          max="11"
           value={form.start_hour}
           onChange={(e) =>
-            setForm({ ...form, start_hour: Number(e.target.value) })
+            setForm({ ...form, start_hour: Number(e.target.value), lunch_after_period: 12 - Number(e.target.value) })
           }
         />
       </label>
@@ -959,17 +966,14 @@ function WorkingWeekForm({ done, initial, close }: { done: () => void; initial?:
         />
       </label>
       <label>
-        Lunch after period #
+        Lunch break
         <input
-          type="number"
-          min="0"
-          value={form.lunch_after_period}
-          onChange={(e) =>
-            setForm({ ...form, lunch_after_period: Number(e.target.value) })
-          }
+          value="12:00–13:00"
+          disabled
+          readOnly
         />
       </label>
-      <small>Lunch is fixed at 12:00–13:00. With a 09:00 start, keep this value at 3.</small>
+      <small>Lunch is a fixed institutional break and cannot be changed.</small>
       {mutation.error && (
         <div className="error">{errorText(mutation.error)}</div>
       )}

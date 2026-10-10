@@ -54,6 +54,7 @@ export async function request<T>(
   if (response.status === 401) {
     localStorage.removeItem("timetable_token");
     localStorage.removeItem("timetable_user");
+    window.dispatchEvent(new Event("timetable:unauthorized"));
   }
   if (!response.ok) {
     let detail: any = `Request failed (${response.status})`;
