@@ -31,7 +31,12 @@ def build_database_problem(db: Session, academic_year_id: int, semester_ids: lis
         cohort = f"SEM-{semester.semester_number}"
         groups = tuple(offering.participant_group_ids or [cohort])
         if cohort not in groups and offering.kind != "elective": groups = groups + (cohort,)
-        eligible = tuple(offering.eligible_room_ids or ([semester.home_room_id] if semester.home_room_id else []))
+        if offering.eligible_room_ids:
+            eligible = tuple(offering.eligible_room_ids)
+        elif offering.kind == "lab":
+            eligible = tuple(room.id for room in db_rooms if room.room_type == "lab")
+        else:
+            eligible = tuple(room.id for room in db_rooms if room.room_type == "theory")
         if offering.kind == "theory" and semester.home_room_policy == "hard" and semester.home_room_id:
             eligible = (semester.home_room_id,)
         preferred = frozenset({0, 1, 2}) if offering.kind == "lab" and semester.semester_number == 3 else frozenset({4, 5, 6}) if offering.kind == "lab" and semester.semester_number == 5 else frozenset()

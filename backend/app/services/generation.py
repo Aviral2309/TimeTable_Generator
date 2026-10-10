@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.models.entities import GenerationRun, Timetable, TimetableSession, ValidationReport
 from app.scheduling.annealing import refine
@@ -21,7 +22,8 @@ def generate_problem(db: Session, academic_year_id: int, mode: str, time_limit: 
     diagnostics = result.diagnostics + errors
     run.status, run.objective_value, run.runtime_seconds, run.diagnostics = result.status, result.objective, result.runtime_seconds, diagnostics
     if assignments and valid:
-        table = Timetable(generation_run_id=run.id, academic_year_id=academic_year_id)
+        next_version = (db.scalar(select(func.max(Timetable.version)).where(Timetable.academic_year_id == academic_year_id)) or 0) + 1
+        table = Timetable(generation_run_id=run.id, academic_year_id=academic_year_id, version=next_version)
         db.add(table); db.flush()
         for a in assignments:
             db.add(TimetableSession(timetable_id=table.id, course_offering_id=a.offering_id, occurrence=a.occurrence, day=a.day, start_period=a.start_period, duration_periods=a.duration, room_id=a.room_id, faculty_ids=list(a.faculty_ids), participant_group_ids=list(a.group_ids)))

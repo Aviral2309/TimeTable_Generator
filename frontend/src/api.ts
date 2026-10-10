@@ -120,6 +120,11 @@ export const loadDemoData = (termType: "odd" | "even") =>
     method: "POST",
     body: JSON.stringify({ term_type: termType }),
   });
+export const createTermCohorts = (data: { academic_year_id: number; department_id: number; default_strength: number }) =>
+  request<{ items: any[] }>("/setup/term-cohorts", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 export const facultyAvailability = (facultyId: number) =>
   request<{ items: any[] }>(`/faculty/${facultyId}/availability`);
 export const saveFacultyAvailability = (facultyId: number, slots: any[]) =>

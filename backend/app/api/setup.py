@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.security import require_roles
 from app.db.session import get_db
 from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, FacultyAvailability, FixedReservation, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, TimetableSession, User
-from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, SemesterCreate, WorkingWeekCreate
+from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, SemesterCreate, TermCohortsCreate, WorkingWeekCreate
 from app.scheduling.database_problem import build_database_problem
 from app.scheduling.preprocessing import validate_problem
 
@@ -114,6 +114,7 @@ def create_working_week(body: WorkingWeekCreate, db: Session = Depends(get_db), 
     days = list(dict.fromkeys(day.strip().title() for day in body.days if day.strip()))
     if not days: raise HTTPException(422, "Select at least one working day")
     if body.lunch_after_period >= body.periods_per_day: raise HTTPException(422, "Lunch period must fall within the working day")
+    if body.start_hour + body.lunch_after_period != 12: raise HTTPException(422, "Lunch break must be fixed at 12:00-13:00")
     if body.start_hour + body.periods_per_day > 24: raise HTTPException(422, "Working periods cannot extend past midnight")
     for day in days:
         for index in range(body.periods_per_day):
@@ -128,6 +129,7 @@ def update_working_week(body: WorkingWeekCreate, db: Session = Depends(get_db), 
     days = [day.strip() for day in body.days if day.strip()]
     if not days: raise HTTPException(422, "Select at least one working day")
     if body.lunch_after_period >= body.periods_per_day: raise HTTPException(422, "Lunch period must fall within the working day")
+    if body.start_hour + body.lunch_after_period != 12: raise HTTPException(422, "Lunch break must be fixed at 12:00-13:00")
     if body.start_hour + body.periods_per_day > 24: raise HTTPException(422, "Working periods cannot extend past midnight")
     db.query(TimeSlot).delete(); db.commit()
     return create_working_week(body, db, _)
@@ -162,8 +164,8 @@ def create_semester(body: SemesterCreate, db: Session = Depends(get_db), _: User
     if not year: raise HTTPException(422, "Select a valid academic year")
     if body.semester_number not in TERM_SEMESTERS[year.term_type]: raise HTTPException(422, f"{year.term_type.title()} term allows semesters {sorted(TERM_SEMESTERS[year.term_type])}")
     if not db.get(Department, body.department_id): raise HTTPException(422, "Select a valid department")
-    room = db.get(Room, body.home_room_id)
-    if not room or room.room_type != "theory" or room.capacity < body.strength:
+    room = db.get(Room, body.home_room_id) if body.home_room_id else None
+    if body.home_room_id and (not room or room.room_type != "theory" or room.capacity < body.strength):
         raise HTTPException(422, "Home classroom must be a theory room with sufficient capacity")
     item = SemesterOffering(**body.model_dump(), section="ALL"); db.add(item); db.commit(); db.refresh(item); return item
 
@@ -174,8 +176,8 @@ def update_semester(item_id: int, body: SemesterCreate, db: Session = Depends(ge
     if not item: raise HTTPException(404, "Semester configuration not found")
     year = db.get(AcademicYear, body.academic_year_id)
     if not year or body.semester_number not in TERM_SEMESTERS[year.term_type]: raise HTTPException(422, "Semester does not belong to the selected Odd/Even term")
-    room = db.get(Room, body.home_room_id)
-    if not room or room.room_type != "theory" or room.capacity < body.strength: raise HTTPException(422, "Home classroom must be a theory room with sufficient capacity")
+    room = db.get(Room, body.home_room_id) if body.home_room_id else None
+    if body.home_room_id and (not room or room.room_type != "theory" or room.capacity < body.strength): raise HTTPException(422, "Home classroom must be a theory room with sufficient capacity")
     for key, value in body.model_dump().items(): setattr(item, key, value)
     item.section = "ALL"; db.commit(); db.refresh(item); return item
 
@@ -190,6 +192,18 @@ def delete_semester(item_id: int, db: Session = Depends(get_db), _: User = Depen
         raise HTTPException(409, "Semester is used by a generated timetable. Generate a new version or clear that timetable first.")
     for offering in offerings: db.delete(offering)
     db.delete(item); db.commit(); return Response(status_code=204)
+
+
+@router.post("/term-cohorts", status_code=201)
+def create_term_cohorts(body: TermCohortsCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    year = db.get(AcademicYear, body.academic_year_id)
+    if not year: raise HTTPException(422, "Select a valid academic term")
+    if not db.get(Department, body.department_id): raise HTTPException(422, "Select a valid department")
+    existing = {item.semester_number for item in db.scalars(select(SemesterOffering).where(SemesterOffering.academic_year_id == year.id, SemesterOffering.department_id == body.department_id)).all()}
+    for semester_number in sorted(TERM_SEMESTERS[year.term_type] - existing):
+        db.add(SemesterOffering(academic_year_id=year.id, department_id=body.department_id, semester_number=semester_number, section="ALL", strength=body.default_strength, home_room_id=None, home_room_policy="disabled"))
+    db.commit()
+    return semesters(year.id, db, _)
 
 
 @router.get("/course-offerings")

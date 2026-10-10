@@ -31,6 +31,7 @@ import {
   bootstrapAdmin,
   bootstrapStatus,
   create,
+  createTermCohorts,
   list,
   login,
   loadDemoData,
@@ -568,6 +569,10 @@ function Preparation() {
     mutationFn: () => loadDemoData(demoTerm),
     onSuccess: refresh,
   });
+  const createCohorts = useMutation({
+    mutationFn: () => createTermCohorts({ academic_year_id: yearId!, department_id: optionsQ.data.departments[0].id, default_strength: 60 }),
+    onSuccess: refresh,
+  });
   const setupIsEmpty = !!statusQ.data && ["institutes", "departments", "academic_years", "time_slots", "faculty", "rooms", "semesters"].every((key) => !statusQ.data!.counts[key]);
   const deleteSemester = useMutation({
     mutationFn: (id: number) => setupRemove("semesters", id),
@@ -704,6 +709,11 @@ function Preparation() {
           >
             Add semester
           </button>
+          {!ids.length && yearId && !!optionsQ.data?.departments.length && (
+            <button className="secondary" disabled={createCohorts.isPending} onClick={() => createCohorts.mutate()}>
+              {createCohorts.isPending ? "Creating…" : `Create ${statusQ.data?.active_year?.term_type === "even" ? "II, IV, VI" : "III, V, VII"} automatically`}
+            </button>
+          )}
         </div>
         {ids.length === 0 ? (
           <EmptyState text="No semesters yet. Add faculty and theory rooms, then create the first semester." />
@@ -816,7 +826,7 @@ function Preparation() {
           close={() => { setAddingSubject(false); setEditingSubject(null); }}
         />
       )}
-      {(deleteSemester.error || deleteSubject.error) && <div className="error">{errorText(deleteSemester.error || deleteSubject.error)}</div>}
+      {(deleteSemester.error || deleteSubject.error || createCohorts.error) && <div className="error">{errorText(deleteSemester.error || deleteSubject.error || createCohorts.error)}</div>}
       {foundationEdit && <FoundationForm {...foundationEdit} close={() => setFoundationEdit(null)} done={refresh} />}
       {editingWeek && <WorkingWeekForm initial={optionsQ.data?.time_slots} close={() => setEditingWeek(false)} done={refresh} />}
       {(deleteFoundation.error || deleteWeek.error) && <div className="error">{errorText(deleteFoundation.error || deleteWeek.error)}</div>}
@@ -907,7 +917,7 @@ function QuickForm({
 }
 function WorkingWeekForm({ done, initial, close }: { done: () => void; initial?: any[]; close?: () => void }) {
   const firstDay=initial?.[0]?.day;const daySlots=(initial||[]).filter(slot=>slot.day===firstDay);const lunch=daySlots.find(slot=>slot.blocked);
-  const [form, setForm] = useState({days: initial?.length ? DAYS.filter(day=>initial.some(slot=>slot.day===day)) : DAYS,start_hour: daySlots.length?Number(daySlots[0].start_time.split(":")[0]):10,periods_per_day: daySlots.length||8,lunch_after_period: lunch?.period_index??3});
+  const [form, setForm] = useState({days: initial?.length ? DAYS.filter(day=>initial.some(slot=>slot.day===day)) : DAYS,start_hour: daySlots.length?Number(daySlots[0].start_time.split(":")[0]):9,periods_per_day: daySlots.length||8,lunch_after_period: lunch?.period_index??3});
   const mutation = useMutation({
     mutationFn: () => initial?.length ? setupUpdateRoot("working-week", form) : setupCreate("working-week", form),
     onSuccess: () => {done();close?.()},
@@ -959,6 +969,7 @@ function WorkingWeekForm({ done, initial, close }: { done: () => void; initial?:
           }
         />
       </label>
+      <small>Lunch is fixed at 12:00–13:00. With a 09:00 start, keep this value at 3.</small>
       {mutation.error && (
         <div className="error">{errorText(mutation.error)}</div>
       )}
@@ -988,7 +999,7 @@ function SemesterForm({
     strength: initial.strength,
     home_room_id: initial.home_room_id,
     home_room_policy: initial.home_room_policy,
-  } : { academic_year_id: yearId, department_id: options.departments[0]?.id, semester_number: termType === "odd" ? 3 : 2, strength: 60, home_room_id: rooms[0]?.id, home_room_policy: "hard" });
+  } : { academic_year_id: yearId, department_id: options.departments[0]?.id, semester_number: termType === "odd" ? 3 : 2, strength: 60, home_room_id: null, home_room_policy: "disabled" });
   const mutation = useMutation({
     mutationFn: () => initial ? setupUpdate("semesters", initial.id, form) : setupCreate("semesters", form),
     onSuccess: () => {
@@ -1049,11 +1060,12 @@ function SemesterForm({
       <label>
         Home classroom
         <select
-          value={form.home_room_id}
+          value={form.home_room_id || ""}
           onChange={(e) =>
-            setForm({ ...form, home_room_id: Number(e.target.value) })
+            setForm({ ...form, home_room_id: e.target.value ? Number(e.target.value) : null, home_room_policy: e.target.value ? "hard" : "disabled" })
           }
         >
+          <option value="">Automatic compatible classroom</option>
           {rooms.map((r: any) => (
             <option key={r.id} value={r.id}>
               {r.code} · capacity {r.capacity}
@@ -1127,9 +1139,11 @@ function facultyNames(options: any, ids: number[]) {
     .join(", ");
 }
 function roomNames(options: any, ids: number[]) {
+  if (!ids?.length) return "Automatic compatible room";
   return ids.map((id) => roomName(options, id)).join(", ");
 }
 function roomName(options: any, id: number) {
+  if (!id) return "Automatic room allocation";
   const r = options?.rooms.find((x: any) => x.id === id);
   return r ? `${r.code} · ${r.name}` : `Room #${id}`;
 }
@@ -1145,7 +1159,6 @@ function SubjectForm({
   close: () => void;
 }) {
   const qc = useQueryClient();
-  const firstTheory = options.rooms.find((r: any) => r.room_type === "theory");
   const [form, setForm] = useState<any>(initial ? {
     ...initial,
     participant_group: initial.participant_group_ids?.[0] || null,
@@ -1158,7 +1171,7 @@ function SubjectForm({
     duration_periods: 1,
     enrollment: 60,
     faculty_ids: [options.faculty[0]?.id],
-    eligible_room_ids: firstTheory ? [firstTheory.id] : [],
+    eligible_room_ids: [],
     required_features: [],
     participant_group: null,
     elective_group: null,
@@ -1177,14 +1190,11 @@ function SubjectForm({
   });
   const set = (key: string, value: any) => setForm({ ...form, [key]: value });
   const selectKind = (kind: string) => {
-    const eligible = options.rooms.find((room: any) =>
-      kind === "lab" ? room.room_type === "lab" : room.room_type === "theory",
-    );
     setForm({
       ...form,
       kind,
       duration_periods: kind === "lab" ? 2 : 1,
-      eligible_room_ids: eligible ? [eligible.id] : [],
+      eligible_room_ids: [],
     });
   };
   return (
@@ -1266,36 +1276,28 @@ function SubjectForm({
         </div>
         {!form.faculty_ids.length && <small className="field-error">Select at least one teacher.</small>}
       </fieldset>
-      <label>
-        {form.kind === "lab" ? "Laboratory" : "Eligible room"}
-        <select
-          required
-          value={form.eligible_room_ids[0] || ""}
-          onChange={(e) => set("eligible_room_ids", [Number(e.target.value)])}
-        >
-          {options.rooms
-            .filter((r: any) =>
-              form.kind === "lab"
-                ? r.room_type === "lab"
-                : r.room_type === "theory",
-            )
-            .map((r: any) => (
-              <option value={r.id} key={r.id}>
-                {r.code} · capacity {r.capacity}
-              </option>
-            ))}
-        </select>
-      </label>
+      <fieldset className="multi-select-field">
+        <legend>{form.kind === "lab" ? "Allowed laboratories" : "Allowed classrooms"} · optional</legend>
+        <p className="muted">Leave every option unchecked to let the optimizer select any compatible room automatically.</p>
+        <div className="check-list">
+          {options.rooms.filter((room: any) => form.kind === "lab" ? room.room_type === "lab" : room.room_type === "theory").map((room: any) => {
+            const checked = form.eligible_room_ids.includes(room.id);
+            return <label className="checkbox" key={room.id}><input type="checkbox" checked={checked} onChange={() => set("eligible_room_ids", checked ? form.eligible_room_ids.filter((id: number) => id !== room.id) : [...form.eligible_room_ids, room.id])} />{room.code} · {room.name} · capacity {room.capacity}{room.concurrent_capacity > 1 ? ` · ${room.concurrent_capacity} simultaneous groups` : ""}</label>;
+          })}
+        </div>
+      </fieldset>
       {form.kind === "lab" && (
-        <label>
-          Batch/group name
-          <input
-            required
-            placeholder="Example: SEM-5-B1"
-            value={form.participant_group || ""}
-            onChange={(e) => set("participant_group", e.target.value)}
-          />
-        </label>
+        <>
+          <label>
+            Batch/group name
+            <input required placeholder="Example: SEM-5-B1" value={form.participant_group || ""} onChange={(e) => set("participant_group", e.target.value)} />
+          </label>
+          <label>
+            Required lab capabilities
+            <input placeholder="Example: network, machines" value={(form.required_features || []).join(", ")} onChange={(e) => set("required_features", e.target.value.split(",").map((value) => value.trim()).filter(Boolean))} />
+            <small>The optimizer will only use labs whose supported subjects/capabilities include these values.</small>
+          </label>
+        </>
       )}
       {form.kind === "elective" && (
         <>
@@ -1324,6 +1326,7 @@ function SubjectForm({
 
 function Generate() {
   const qc = useQueryClient();
+  const existingTimetable = useQuery({ queryKey: ["timetable"], queryFn: timetable, retry: false });
   const statusQ = useQuery({
     queryKey: ["setup-status"],
     queryFn: setupStatus,
@@ -1401,7 +1404,7 @@ function Generate() {
               ? "Optimizing resources…"
               : check.isPending
                 ? "Cross-checking inputs…"
-                : "Cross-check & generate"}
+                : existingTimetable.data ? "Cross-check & dynamically reschedule" : "Cross-check & generate"}
             <Play size={17} />
           </button>
           {check.data && !check.data.valid && (
@@ -1414,6 +1417,7 @@ function Generate() {
           {mutation.error && (
             <div className="error">{errorText(mutation.error)}</div>
           )}
+          {existingTimetable.data && <p className="muted">Dynamic rescheduling creates version {existingTimetable.data.version + 1} using the latest teacher availability, reservations, rooms, subjects, and constraints. Earlier versions remain preserved.</p>}
         </div>
         <div className="card result">
           <h3>Generation result</h3>
@@ -1653,6 +1657,18 @@ function MasterList({ resource, title }: { resource: string; title: string }) {
       : resource === "rooms"
         ? options.data?.departments.length
         : options.data?.academic_years.length && options.data?.rooms.length;
+  const columns = resource === "faculty"
+    ? ["faculty_code", "name", "email", "home_department_id", "weekly_limit", "daily_limit", "max_consecutive"]
+    : resource === "rooms"
+      ? ["code", "name", "department_id", "capacity", "room_type", "features", "concurrent_capacity"]
+      : ["day", "start_period", "duration_periods", "room_id", "faculty_id", "participant_group_id", "description"];
+  const columnLabel = (key: string) => ({home_department_id:"department code",department_id:"department code",features:"supported subjects / capabilities",concurrent_capacity:"simultaneous groups",start_period:"start period",duration_periods:"duration",room_id:"room",faculty_id:"faculty",participant_group_id:"student group"} as Record<string,string>)[key] || key.replaceAll("_", " ");
+  const cellValue = (key: string, value: any) => {
+    if (["home_department_id", "department_id"].includes(key)) return options.data?.departments.find((department: any) => department.id === value)?.code || "—";
+    if (key === "room_id") return options.data?.rooms.find((room: any) => room.id === value)?.code || "—";
+    if (key === "faculty_id") return options.data?.faculty.find((faculty: any) => faculty.id === value)?.faculty_code || "—";
+    return Array.isArray(value) ? value.join(", ") || "—" : String(value ?? "—");
+  };
   return (
     <section className="page">
       <PageTitle eyebrow="Admin master data" title={title}>
@@ -1690,26 +1706,14 @@ function MasterList({ resource, title }: { resource: string; title: string }) {
           <table>
             <thead>
               <tr>
-                {Object.keys(q.data.items[0])
-                  .filter((k) => !["features", "password_hash"].includes(k))
-                  .slice(0, 7)
-                  .map((k) => (
-                    <th key={k}>{k.replaceAll("_", " ")}</th>
-                  ))}
+                {columns.map((key) => <th key={key}>{columnLabel(key)}</th>)}
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {q.data.items.map((item: any) => (
                 <tr key={item.id}>
-                  {Object.entries(item)
-                    .filter(([k]) => !["features", "password_hash"].includes(k))
-                    .slice(0, 7)
-                    .map(([k, v]) => (
-                      <td key={k}>
-                        {Array.isArray(v) ? v.join(", ") : String(v ?? "—")}
-                      </td>
-                    ))}
+                  {columns.map((key) => <td key={key}>{cellValue(key, item[key])}</td>)}
                   <td><div className="record-actions"><button className="icon-button" title="Edit" onClick={() => setEditing(item)}><Pencil size={15} /></button><button className="icon-button danger" title="Delete" onClick={() => confirmDelete(item)}><Trash2 size={15} /></button></div></td>
                 </tr>
               ))}
@@ -1755,6 +1759,7 @@ function CreateForm({
             capacity: 60,
             room_type: "theory",
             features: [],
+            concurrent_capacity: 1,
           }
         : {
             academic_year_id: year?.id,
@@ -1786,6 +1791,7 @@ function CreateForm({
       "max_consecutive",
       "department_id",
       "capacity",
+      "concurrent_capacity",
       "academic_year_id",
       "start_period",
       "duration_periods",
@@ -1814,7 +1820,7 @@ function CreateForm({
     >
       {fields.map((key) => (
         <label key={key}>
-          {key.replaceAll("_", " ")}
+          {key === "features" ? "Supported subjects / capabilities" : key === "concurrent_capacity" ? "Maximum simultaneous groups" : key.replaceAll("_", " ")}
           {["home_department_id", "department_id"].includes(key) ? (
             <select
               value={form[key]}
@@ -1880,6 +1886,7 @@ function CreateForm({
                     ? "email"
                     : "text"
               }
+              placeholder={key === "features" ? "network, machines, power systems" : undefined}
               value={
                 Array.isArray(form[key])
                   ? form[key].join(", ")

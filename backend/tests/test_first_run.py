@@ -4,12 +4,12 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.auth import bootstrap_admin, bootstrap_status
 from app.api.master_data import faculty_availability, faculty_create, faculty_delete, faculty_update, replace_faculty_availability, reservation_create, reservation_delete, reservation_update, room_create, room_delete, room_update
-from app.api.setup import create_academic_year, create_course_offering, create_demo_data, create_department, create_institute, create_semester, create_working_week, delete_course_offering, delete_semester, setup_status, update_course_offering, update_semester, validate_configuration
+from app.api.setup import create_academic_year, create_course_offering, create_demo_data, create_department, create_institute, create_semester, create_term_cohorts, create_working_week, delete_course_offering, delete_semester, setup_status, update_course_offering, update_semester, validate_configuration
 from app.db.session import Base
 from app.models.entities import AcademicYear, CourseOffering, Faculty, FixedReservation, SemesterOffering, User
 from app.schemas.auth import BootstrapAdminRequest
 from app.schemas.master_data import FacultyAvailabilitySlot, FacultyCreate, ReservationCreate, RoomCreate
-from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, SemesterCreate, WorkingWeekCreate
+from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, SemesterCreate, TermCohortsCreate, WorkingWeekCreate
 
 
 def empty_database():
@@ -37,7 +37,7 @@ def test_setup_status_starts_empty_and_tracks_admin_foundation():
     create_institute(InstituteCreate(name="Example Institute"), db, actor)
     create_department(DepartmentCreate(code="EE", name="Electrical Engineering"), db, actor)
     create_academic_year(AcademicYearCreate(name="2026-27"), db, actor)
-    create_working_week(WorkingWeekCreate(days=["Monday", "Tuesday"], start_hour=10, periods_per_day=6, lunch_after_period=3), db, actor)
+    create_working_week(WorkingWeekCreate(days=["Monday", "Tuesday"], start_hour=9, periods_per_day=6, lunch_after_period=3), db, actor)
 
     configured = setup_status(db, actor)
     assert configured["counts"]["time_slots"] == 12
@@ -50,7 +50,7 @@ def test_admin_can_create_update_and_delete_operational_records():
     create_institute(InstituteCreate(name="Example Institute"), db, actor)
     department = create_department(DepartmentCreate(code="EE", name="Electrical Engineering"), db, actor)
     year = create_academic_year(AcademicYearCreate(name="2026-27"), db, actor)
-    create_working_week(WorkingWeekCreate(days=["Monday", "Tuesday"], start_hour=10, periods_per_day=6, lunch_after_period=3), db, actor)
+    create_working_week(WorkingWeekCreate(days=["Monday", "Tuesday"], start_hour=9, periods_per_day=6, lunch_after_period=3), db, actor)
     faculty_body = FacultyCreate(faculty_code="F01", name="Teacher One", email="one@example.edu", home_department_id=department.id)
     faculty = faculty_create(faculty_body, db, actor)
     faculty = faculty_update(faculty.id, faculty_body.model_copy(update={"name": "Teacher Updated"}), db, actor)
@@ -95,3 +95,12 @@ def test_demo_data_supports_terms_electives_coteaching_and_constraints():
     assert setup_status(db, actor)["ready_for_validation"] is True
     semester_ids = [item.id for item in db.query(SemesterOffering).all()]
     assert validate_configuration(semester_ids, year.id, db, actor)["valid"] is True
+
+
+def test_term_selection_creates_only_the_expected_semesters():
+    db = empty_database(); actor = User(email="admin@college.edu", name="Admin", password_hash="x", role="admin")
+    department = create_department(DepartmentCreate(code="EE", name="Electrical Engineering"), db, actor)
+    year = create_academic_year(AcademicYearCreate(name="2027 Even", term_type="even"), db, actor)
+    result = create_term_cohorts(TermCohortsCreate(academic_year_id=year.id, department_id=department.id, default_strength=72), db, actor)
+    assert {item.semester_number for item in result["items"]} == {2, 4, 6}
+    assert all(item.home_room_id is None and item.strength == 72 for item in result["items"])

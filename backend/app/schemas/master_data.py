@@ -18,6 +18,7 @@ class RoomCreate(BaseModel):
     capacity: int = Field(gt=0)
     room_type: str = Field(pattern="^(theory|lab)$")
     features: list[str] = []
+    concurrent_capacity: int = Field(1, ge=1, le=10)
 
 
 class ReservationCreate(BaseModel):

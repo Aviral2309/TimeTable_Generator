@@ -31,8 +31,14 @@ class SemesterCreate(BaseModel):
     department_id: int
     semester_number: int = Field(ge=1, le=8)
     strength: int = Field(gt=0, le=300)
-    home_room_id: int
+    home_room_id: int | None = None
     home_room_policy: str = Field("hard", pattern="^(hard|soft|disabled)$")
+
+
+class TermCohortsCreate(BaseModel):
+    academic_year_id: int
+    department_id: int
+    default_strength: int = Field(60, gt=0, le=300)
 
 
 class CourseOfferingCreate(BaseModel):
@@ -44,7 +50,7 @@ class CourseOfferingCreate(BaseModel):
     duration_periods: int = Field(ge=1, le=4)
     enrollment: int = Field(gt=0, le=500)
     faculty_ids: list[int] = Field(min_length=1)
-    eligible_room_ids: list[int] = Field(min_length=1)
+    eligible_room_ids: list[int] = []
     required_features: list[str] = []
     participant_group: str | None = None
     elective_group: str | None = None
