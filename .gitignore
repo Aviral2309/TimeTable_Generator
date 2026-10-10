@@ -10,5 +10,5 @@ htmlcov/
 dist/
 node_modules/
 *.tsbuildinfo
-
 *.log
+

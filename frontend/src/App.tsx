@@ -1,60 +1,1876 @@
-import {FormEvent,useMemo,useState} from 'react'
-import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query'
-import {NavLink,Navigate,Route,Routes} from 'react-router-dom'
-import {BarChart3,BookOpen,Building2,CalendarDays,Check,ChevronRight,Clock3,Download,FlaskConical,GraduationCap,LayoutDashboard,LogOut,Menu,Play,School,Settings,ShieldCheck,Users,X} from 'lucide-react'
-import {addOffering,bootstrapAdmin,bootstrapStatus,create,list,login,offerings,request,semesters,Session,setupCreate,setupOptions,SetupStatus,setupStatus,timetable,User,validateSetup} from './api'
+import { FormEvent, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import {
+  BarChart3,
+  BookOpen,
+  Building2,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  Clock3,
+  Download,
+  FlaskConical,
+  GraduationCap,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Pencil,
+  Play,
+  Printer,
+  School,
+  Settings,
+  ShieldCheck,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
+import {
+  addOffering,
+  bootstrapAdmin,
+  bootstrapStatus,
+  create,
+  list,
+  login,
+  offerings,
+  remove,
+  removeOffering,
+  request,
+  semesters,
+  Session,
+  setupCreate,
+  setupOptions,
+  setupRemove,
+  setupRemoveRoot,
+  SetupStatus,
+  setupStatus,
+  setupUpdate,
+  setupUpdateRoot,
+  timetable,
+  update,
+  updateOffering,
+  User,
+  validateSetup,
+} from "./api";
 
-const DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday']
-function storedUser():User|null{try{return JSON.parse(localStorage.getItem('timetable_user')||'null')}catch{return null}}
-function saveSession(data:{access_token:string;user:User},onLogin:(u:User)=>void){localStorage.setItem('timetable_token',data.access_token);localStorage.setItem('timetable_user',JSON.stringify(data.user));onLogin(data.user)}
-function errorText(error:unknown){return error instanceof Error?error.message:String(error)}
-
-export default function App(){
-  const [user,setUser]=useState<User|null>(storedUser)
-  const bootstrap=useQuery({queryKey:['bootstrap'],queryFn:bootstrapStatus,retry:false,enabled:!user})
-  if(!user&&bootstrap.isLoading)return <main className="loading-page">Opening timetable system…</main>
-  if(!user&&bootstrap.data?.needs_admin)return <FirstAdmin onLogin={setUser}/>
-  return <Routes><Route path="/login" element={user?<Navigate to="/"/>:<Login onLogin={setUser}/>}/><Route path="/*" element={user?<Shell user={user} logout={()=>{localStorage.clear();setUser(null)}}/>:<Navigate to="/login"/>}/></Routes>
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+function storedUser(): User | null {
+  try {
+    return JSON.parse(localStorage.getItem("timetable_user") || "null");
+  } catch {
+    return null;
+  }
+}
+function saveSession(
+  data: { access_token: string; user: User },
+  onLogin: (u: User) => void,
+) {
+  localStorage.setItem("timetable_token", data.access_token);
+  localStorage.setItem("timetable_user", JSON.stringify(data.user));
+  onLogin(data.user);
+}
+function errorText(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
-function FirstAdmin({onLogin}:{onLogin:(u:User)=>void}){const [form,setForm]=useState({name:'',email:'',password:''});const mutation=useMutation({mutationFn:()=>bootstrapAdmin(form),onSuccess:data=>saveSession(data,onLogin)});return <AuthLayout eyebrow="First-time setup" title="Create the administrator" text="This installation is empty. Create the first admin account, then enter every academic record from the beginning."><form onSubmit={e=>{e.preventDefault();mutation.mutate()}}><h2>Administrator account</h2><label>Full name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>Email<input required type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label>Password<input required minLength={8} type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/></label>{mutation.error&&<div className="error">{errorText(mutation.error)}</div>}<button className="primary" disabled={mutation.isPending}>{mutation.isPending?'Creating…':'Create admin & continue'}<ChevronRight size={18}/></button></form></AuthLayout>}
-function Login({onLogin}:{onLogin:(u:User)=>void}){const [email,setEmail]=useState(''),[password,setPassword]=useState('');const mutation=useMutation({mutationFn:()=>login(email,password),onSuccess:d=>saveSession(d,onLogin)});return <AuthLayout eyebrow="Academic operations" title="Intelligent timetable planning, without the conflicts." text="Sign in with the administrator account created during first-time setup."><form onSubmit={e=>{e.preventDefault();mutation.mutate()}}><p className="eyebrow">Welcome back</p><h2>Sign in to continue</h2><label>Email<input required value={email} onChange={e=>setEmail(e.target.value)} type="email"/></label><label>Password<input required value={password} onChange={e=>setPassword(e.target.value)} type="password"/></label>{mutation.error&&<div className="error">{errorText(mutation.error)}</div>}<button className="primary" disabled={mutation.isPending}>{mutation.isPending?'Signing in…':'Sign in'}<ChevronRight size={18}/></button></form></AuthLayout>}
-function AuthLayout({eyebrow,title,text,children}:{eyebrow:string;title:string;text:string;children:React.ReactNode}){return <main className="login-page"><section className="login-brand"><div className="brand-mark"><GraduationCap/></div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{text}</p><div className="trust"><ShieldCheck/><span>Every generated schedule is independently validated.</span></div></section><section className="login-panel">{children}</section></main>}
-
-const adminNav=[['Dashboard','/',LayoutDashboard],['Start Setup','/prepare',BookOpen],['Faculty','/faculty',Users],['Rooms & Labs','/rooms',Building2],['Reservations','/reservations',Clock3],['Generate','/generate',Play],['Timetable','/timetable',CalendarDays],['Analytics','/analytics',BarChart3]] as const
-const viewerNav=[['My Timetable','/timetable',CalendarDays],['Download','/download',Download]] as const
-function Shell({user,logout}:{user:User;logout:()=>void}){const [open,setOpen]=useState(false);const status=useQuery({queryKey:['setup-status'],queryFn:setupStatus,enabled:user.role==='admin'});const nav=user.role==='admin'?adminNav:viewerNav;return <div className="app-shell"><aside className={open?'open':''}><div className="logo"><div><School/></div><span>Chronos<strong>Academic</strong></span><button className="close" onClick={()=>setOpen(false)}><X/></button></div><nav>{nav.map(([label,to,Icon])=><NavLink key={to} to={to} end={to==='/' } onClick={()=>setOpen(false)}><Icon size={19}/><span>{label}</span></NavLink>)}</nav><div className="sidebar-foot"><div className="avatar">{user.name.split(' ').map(x=>x[0]).slice(0,2).join('')}</div><div><strong>{user.name}</strong><span>{user.role}</span></div><button onClick={logout} title="Sign out"><LogOut size={18}/></button></div></aside><main className="content"><header><button className="menu" onClick={()=>setOpen(true)}><Menu/></button><div><span className="term">{status.data?.active_year?.name||'Academic setup pending'}</span><span className={status.data?.ready_for_validation?'status-dot':'status-dot pending'}>{status.data?.ready_for_validation?'Ready to validate':'Setup in progress'}</span></div></header><Routes><Route index element={<Dashboard user={user}/>}/><Route path="prepare" element={<Preparation/>}/><Route path="generate" element={<Generate/>}/><Route path="timetable" element={<TimetablePage/>}/><Route path="download" element={<DownloadPage/>}/><Route path="faculty" element={<MasterList resource="faculty" title="Faculty"/>}/><Route path="rooms" element={<MasterList resource="rooms" title="Rooms & Laboratories"/>}/><Route path="reservations" element={<MasterList resource="reservations" title="Fixed Reservations"/>}/><Route path="analytics" element={<Analytics/>}/><Route path="*" element={<Navigate to="/"/>}/></Routes></main></div>}
-
-function PageTitle({eyebrow,title,children}:{eyebrow:string;title:string;children?:React.ReactNode}){return <div className="page-title"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1></div>{children}</div>}
-function Metric({label,value,detail,icon}:{label:string;value:string;detail:string;icon:React.ReactNode}){return <div className="metric"><div className="metric-icon">{icon}</div><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>}
-function Dashboard({user}:{user:User}){const status=useQuery({queryKey:['setup-status'],queryFn:setupStatus,enabled:user.role==='admin'});const runs=useQuery({queryKey:['analytics'],queryFn:()=>request<any>('/analytics/summary'),enabled:user.role==='admin'});if(user.role!=='admin')return <section className="page"><PageTitle eyebrow={`${user.role} workspace`} title={`Welcome, ${user.name}`}/><div className="hero-card"><div><h2>Your weekly timetable</h2><NavLink className="primary button-link" to="/timetable">Open timetable</NavLink></div><CalendarDays size={90}/></div></section>;const s=status.data;return <section className="page"><PageTitle eyebrow="Admin-first workflow" title="Build your timetable from the beginning"><NavLink className="primary button-link" to="/prepare">Continue setup<ChevronRight size={18}/></NavLink></PageTitle><p className="lead">No academic data is supplied automatically. Complete each step with your institution's real records before generation.</p><div className="metric-grid"><Metric label="Semesters" value={String(s?.counts.semesters??0)} detail="3 required" icon={<GraduationCap/>}/><Metric label="Faculty" value={String(s?.counts.faculty??0)} detail="Added by admin" icon={<Users/>}/><Metric label="Rooms & labs" value={String(s?.counts.rooms??0)} detail="Added by admin" icon={<Building2/>}/><Metric label="Successful runs" value={String(runs.data?.successful_runs??0)} detail="Generated schedules" icon={<ShieldCheck/>}/></div><div className="grid-2"><div className="card"><h3>Preparation checklist</h3>{s?.steps.map((step,i)=><div className="progress-row" key={step.key}><span className={`step ${step.complete?'done':''}`}>{step.complete?<Check size={16}/>:i+1}</span><div><strong>{step.label}</strong><small>{step.complete?'Complete':'Required before generation'}</small></div>{step.complete&&<ShieldCheck size={18}/>}</div>)}</div><div className={`card ${s?.ready_for_validation?'accent':''}`}><p className="eyebrow">Next action</p><h2>{s?.ready_for_validation?'Cross-check and generate':'Continue entering records'}</h2><p>{s?.ready_for_validation?'All required categories contain data. The validator will now check capacities, assignments and conflicts.':'Follow the setup order so later forms can use the earlier records in dropdown menus.'}</p><NavLink className="primary button-link" to={s?.ready_for_validation?'/generate':'/prepare'}>{s?.ready_for_validation?'Go to generation':'Open setup'}</NavLink></div></div></section>}
-
-function Preparation(){
-  const qc=useQueryClient();const statusQ=useQuery({queryKey:['setup-status'],queryFn:setupStatus});const optionsQ=useQuery({queryKey:['setup-options'],queryFn:setupOptions});const yearId=statusQ.data?.active_year?.id
-  const semQ=useQuery({queryKey:['semesters',yearId],queryFn:()=>semesters(yearId!),enabled:!!yearId});const [selected,setSelected]=useState<number|null>(null);const current=selected??semQ.data?.items[0]?.id;const coursesQ=useQuery({queryKey:['offerings',current],queryFn:()=>offerings(current!),enabled:!!current});const [addingSubject,setAddingSubject]=useState(false);const [addingSemester,setAddingSemester]=useState(false);const ids=(semQ.data?.items||[]).map(x=>x.id);const validation=useMutation({mutationFn:()=>validateSetup(yearId!,ids)});const refresh=()=>{qc.invalidateQueries({queryKey:['setup-status']});qc.invalidateQueries({queryKey:['setup-options']});qc.invalidateQueries({queryKey:['semesters']})}
-  return <section className="page"><PageTitle eyebrow="Admin data entry" title="Start from the beginning">{yearId&&<button className="secondary" onClick={()=>validation.mutate()} disabled={validation.isPending}>{validation.isPending?'Checking…':'Cross-check configuration'}<ShieldCheck size={17}/></button>}</PageTitle><p className="lead">Enter data in this order. Nothing below is demo or preloaded data.</p><SetupChecklist status={statusQ.data}/><div className="setup-section"><h2>1. Academic foundation</h2><div className="setup-cards">{!statusQ.data?.counts.institutes?<QuickForm title="Institute" fields={[['name','Institute name']]} submit={data=>setupCreate('institutes',data)} done={refresh}/>:<CompleteCard title="Institute"/>}<QuickForm title="Department" fields={[['code','Department code'],['name','Department name']]} submit={data=>setupCreate('departments',data)} done={refresh}/>{!statusQ.data?.counts.academic_years?<QuickForm title="Academic year" fields={[['name','Example: 2026-27']]} submit={data=>setupCreate('academic-years',data)} done={refresh}/>:<CompleteCard title={`Academic year ${statusQ.data.active_year?.name}`}/>} {!statusQ.data?.counts.time_slots?<WorkingWeekForm done={refresh}/>:<CompleteCard title="Working days & periods"/>}</div></div><div className="setup-section"><div className="card-head"><div><h2>2. Semester cohorts and subjects</h2><p className="muted">First add faculty and rooms from the side menu. Then create exactly three combined cohorts.</p></div><button className="primary" disabled={!yearId||!optionsQ.data?.departments.length||!optionsQ.data?.rooms.some((r:any)=>r.room_type==='theory')||ids.length>=3} onClick={()=>setAddingSemester(true)}>Add semester</button></div>{ids.length===0?<EmptyState text="No semesters yet. Add faculty and theory rooms, then create the first semester."/>:<><div className="semester-tabs">{semQ.data?.items.map(s=><button className={current===s.id?'active':''} onClick={()=>setSelected(s.id)} key={s.id}><span>Semester {roman(s.semester_number)}</span><small>{s.strength} students · {roomName(optionsQ.data,s.home_room_id)}</small></button>)}</div><div className="card"><div className="card-head"><div><p className="eyebrow">Semester {roman(semQ.data?.items.find(x=>x.id===current)?.semester_number||0)}</p><h2>Subjects and allocations</h2></div><button className="primary" disabled={!optionsQ.data?.faculty.length||!optionsQ.data?.rooms.length} onClick={()=>setAddingSubject(true)}>Add subject</button></div>{coursesQ.data?.items.length?<div className="offering-grid">{coursesQ.data.items.map((o:any)=><div className={`offering ${o.kind}`} key={o.id}><div><span className="badge">{o.kind}</span><h3>{o.code} · {o.name}</h3></div><div className="offering-meta"><span><Clock3/> {o.sessions_per_week} × {o.duration_periods} period{o.duration_periods>1?'s':''}</span><span><Users/> {o.enrollment} students</span><span><Users/> {facultyNames(optionsQ.data,o.faculty_ids)}</span><span><Building2/> {roomNames(optionsQ.data,o.eligible_room_ids)}</span></div>{o.elective_group&&<small>Parallel elective group: {o.elective_group}</small>}</div>)}</div>:<EmptyState text="No subjects added for this semester."/>}</div></>}</div>{validation.data&&<div className={validation.data.valid?'validation-ok':'error'}>{validation.data.valid?<><ShieldCheck/>Configuration is complete and solver-ready.</>:validation.data.errors.map(e=><div key={e.code}>{e.message}</div>)}</div>}{addingSemester&&yearId&&optionsQ.data&&<SemesterForm yearId={yearId} options={optionsQ.data} close={()=>setAddingSemester(false)}/>} {addingSubject&&current&&optionsQ.data&&<SubjectForm semesterId={current} options={optionsQ.data} close={()=>setAddingSubject(false)}/>}</section>
+export default function App() {
+  const [user, setUser] = useState<User | null>(storedUser);
+  const bootstrap = useQuery({
+    queryKey: ["bootstrap"],
+    queryFn: bootstrapStatus,
+    retry: false,
+    enabled: !user,
+  });
+  if (!user && bootstrap.isLoading)
+    return <main className="loading-page">Opening timetable system…</main>;
+  if (!user && bootstrap.data?.needs_admin)
+    return <FirstAdmin onLogin={setUser} />;
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={user ? <Navigate to="/" /> : <Login onLogin={setUser} />}
+      />
+      <Route
+        path="/*"
+        element={
+          user ? (
+            <Shell
+              user={user}
+              logout={() => {
+                localStorage.clear();
+                setUser(null);
+              }}
+            />
+          ) : (
+            <Navigate to="/login" />
+          )
+        }
+      />
+    </Routes>
+  );
 }
-function SetupChecklist({status}:{status?:SetupStatus}){return <div className="flow-strip">{status?.steps.map((s,i)=><div className={s.complete?'complete':''} key={s.key}><span>{s.complete?<Check size={15}/>:i+1}</span><strong>{s.label}</strong></div>)}</div>}
-function CompleteCard({title}:{title:string}){return <div className="quick-card complete-card"><ShieldCheck/><h3>{title}</h3><p>Configured</p></div>}
-function EmptyState({text}:{text:string}){return <div className="empty"><BookOpen/><p>{text}</p></div>}
-function QuickForm({title,fields,submit,done}:{title:string;fields:string[][];submit:(d:any)=>Promise<any>;done:()=>void}){const [form,setForm]=useState<Record<string,string>>({});const mutation=useMutation({mutationFn:()=>submit(form),onSuccess:()=>{setForm({});done()}});return <form className="quick-card" onSubmit={e=>{e.preventDefault();mutation.mutate()}}><h3>{title}</h3>{fields.map(([key,label])=><label key={key}>{label}<input required value={form[key]||''} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}{mutation.error&&<div className="error">{errorText(mutation.error)}</div>}<button className="secondary" disabled={mutation.isPending}>Save {title.toLowerCase()}</button></form>}
-function WorkingWeekForm({done}:{done:()=>void}){const [form,setForm]=useState({days:DAYS,start_hour:10,periods_per_day:8,lunch_after_period:3});const mutation=useMutation({mutationFn:()=>setupCreate('working-week',form),onSuccess:done});return <form className="quick-card" onSubmit={e=>{e.preventDefault();mutation.mutate()}}><h3>Working week</h3><label>Days<input value={form.days.join(', ')} onChange={e=>setForm({...form,days:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)})}/></label><label>First class hour<input type="number" value={form.start_hour} onChange={e=>setForm({...form,start_hour:Number(e.target.value)})}/></label><label>Periods per day<input type="number" value={form.periods_per_day} onChange={e=>setForm({...form,periods_per_day:Number(e.target.value)})}/></label><label>Lunch after period #<input type="number" min="0" value={form.lunch_after_period} onChange={e=>setForm({...form,lunch_after_period:Number(e.target.value)})}/></label>{mutation.error&&<div className="error">{errorText(mutation.error)}</div>}<button className="secondary">Save working hours</button></form>}
-function SemesterForm({yearId,options,close}:{yearId:number;options:any;close:()=>void}){const qc=useQueryClient();const rooms=options.rooms.filter((r:any)=>r.room_type==='theory');const [form,setForm]=useState({academic_year_id:yearId,department_id:options.departments[0]?.id,semester_number:3,strength:60,home_room_id:rooms[0]?.id,home_room_policy:'hard'});const mutation=useMutation({mutationFn:()=>setupCreate('semesters',form),onSuccess:()=>{qc.invalidateQueries({queryKey:['semesters']});qc.invalidateQueries({queryKey:['setup-status']});close()}});return <Modal title="Add semester cohort" close={close} submit={()=>mutation.mutate()} pending={mutation.isPending} error={mutation.error}><label>Department<select value={form.department_id} onChange={e=>setForm({...form,department_id:Number(e.target.value)})}>{options.departments.map((d:any)=><option key={d.id} value={d.id}>{d.code} · {d.name}</option>)}</select></label><label>Semester<select value={form.semester_number} onChange={e=>setForm({...form,semester_number:Number(e.target.value)})}>{[1,2,3,4,5,6,7,8].map(n=><option key={n} value={n}>Semester {roman(n)}</option>)}</select></label><label>Class strength<input type="number" min="1" value={form.strength} onChange={e=>setForm({...form,strength:Number(e.target.value)})}/></label><label>Home classroom<select value={form.home_room_id} onChange={e=>setForm({...form,home_room_id:Number(e.target.value)})}>{rooms.map((r:any)=><option key={r.id} value={r.id}>{r.code} · capacity {r.capacity}</option>)}</select></label></Modal>}
-function Modal({title,close,submit,pending,error,children}:{title:string;close:()=>void;submit:()=>void;pending:boolean;error:unknown;children:React.ReactNode}){return <div className="modal-backdrop"><form className="modal" onSubmit={(e:FormEvent)=>{e.preventDefault();submit()}}><div className="modal-head"><div><p className="eyebrow">Admin entry</p><h2>{title}</h2></div><button type="button" className="icon-button" onClick={close}><X/></button></div><div className="form-grid">{children}</div>{!!error&&<div className="error">{errorText(error)}</div>}<div className="modal-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary" disabled={pending}>{pending?'Saving…':'Save record'}</button></div></form></div>}
 
-function roman(n:number){return ({3:'III',5:'V',7:'VII'} as Record<number,string>)[n]||String(n)}
-function facultyNames(options:any,ids:number[]){return ids.map(id=>options?.faculty.find((f:any)=>f.id===id)?.name||`Faculty #${id}`).join(', ')}
-function roomNames(options:any,ids:number[]){return ids.map(id=>roomName(options,id)).join(', ')}
-function roomName(options:any,id:number){const r=options?.rooms.find((x:any)=>x.id===id);return r?`${r.code} · ${r.name}`:`Room #${id}`}
-function SubjectForm({semesterId,options,close}:{semesterId:number;options:any;close:()=>void}){const qc=useQueryClient();const firstTheory=options.rooms.find((r:any)=>r.room_type==='theory');const [form,setForm]=useState<any>({semester_offering_id:semesterId,code:'',name:'',kind:'theory',sessions_per_week:3,duration_periods:1,enrollment:60,faculty_ids:[options.faculty[0]?.id],eligible_room_ids:firstTheory?[firstTheory.id]:[],required_features:[],participant_group:null,elective_group:null,parallel_elective:false,fixed_day:null,fixed_period:null,fixed_room_id:null});const mutation=useMutation({mutationFn:()=>addOffering(form),onSuccess:()=>{qc.invalidateQueries({queryKey:['offerings',semesterId]});qc.invalidateQueries({queryKey:['setup-status']});close()}});const set=(key:string,value:any)=>setForm({...form,[key]:value});const selectKind=(kind:string)=>{const eligible=options.rooms.find((room:any)=>kind==='lab'?room.room_type==='lab':room.room_type==='theory');setForm({...form,kind,duration_periods:kind==='lab'?2:1,eligible_room_ids:eligible?[eligible.id]:[]})};return <Modal title="Add subject and allocation" close={close} submit={()=>mutation.mutate()} pending={mutation.isPending} error={mutation.error}><label>Subject code<input required value={form.code} onChange={e=>set('code',e.target.value)}/></label><label>Subject name<input required value={form.name} onChange={e=>set('name',e.target.value)}/></label><label>Activity type<select value={form.kind} onChange={e=>selectKind(e.target.value)}><option value="theory">Theory</option><option value="lab">Laboratory</option><option value="elective">Elective</option></select></label><label>Classes per week<input type="number" min="1" max="10" value={form.sessions_per_week} onChange={e=>set('sessions_per_week',Number(e.target.value))}/></label><label>Duration in periods<input type="number" min={form.kind==='lab'?2:1} max={form.kind==='lab'?2:4} disabled={form.kind==='lab'} value={form.duration_periods} onChange={e=>set('duration_periods',Number(e.target.value))}/></label><label>Students enrolled<input type="number" min="1" value={form.enrollment} onChange={e=>set('enrollment',Number(e.target.value))}/></label><label>Faculty<select value={form.faculty_ids[0]} onChange={e=>set('faculty_ids',[Number(e.target.value)])}>{options.faculty.map((f:any)=><option value={f.id} key={f.id}>{f.faculty_code} · {f.name}</option>)}</select></label><label>{form.kind==='lab'?'Laboratory':'Eligible room'}<select required value={form.eligible_room_ids[0]||''} onChange={e=>set('eligible_room_ids',[Number(e.target.value)])}>{options.rooms.filter((r:any)=>form.kind==='lab'?r.room_type==='lab':r.room_type==='theory').map((r:any)=><option value={r.id} key={r.id}>{r.code} · capacity {r.capacity}</option>)}</select></label>{form.kind==='lab'&&<label>Batch/group name<input required placeholder="Example: SEM-5-B1" value={form.participant_group||''} onChange={e=>set('participant_group',e.target.value)}/></label>}{form.kind==='elective'&&<><label>Elective group<input required placeholder="Example: SEM-7-ELECTIVE" value={form.elective_group||''} onChange={e=>set('elective_group',e.target.value)}/></label><label className="checkbox"><input type="checkbox" checked={form.parallel_elective} onChange={e=>set('parallel_elective',e.target.checked)}/> Schedule alternatives together</label></>}</Modal>}
+function FirstAdmin({ onLogin }: { onLogin: (u: User) => void }) {
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const mutation = useMutation({
+    mutationFn: () => bootstrapAdmin(form),
+    onSuccess: (data) => saveSession(data, onLogin),
+  });
+  return (
+    <AuthLayout
+      eyebrow="First-time setup"
+      title="Create the administrator"
+      text="This installation is empty. Create the first admin account, then enter every academic record from the beginning."
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          mutation.mutate();
+        }}
+      >
+        <h2>Administrator account</h2>
+        <label>
+          Full name
+          <input
+            required
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+        </label>
+        <label>
+          Email
+          <input
+            required
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+        </label>
+        <label>
+          Password
+          <input
+            required
+            minLength={8}
+            type="password"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+          />
+        </label>
+        {mutation.error && (
+          <div className="error">{errorText(mutation.error)}</div>
+        )}
+        <button className="primary" disabled={mutation.isPending}>
+          {mutation.isPending ? "Creating…" : "Create admin & continue"}
+          <ChevronRight size={18} />
+        </button>
+      </form>
+    </AuthLayout>
+  );
+}
+function Login({ onLogin }: { onLogin: (u: User) => void }) {
+  const [email, setEmail] = useState(""),
+    [password, setPassword] = useState("");
+  const mutation = useMutation({
+    mutationFn: () => login(email, password),
+    onSuccess: (d) => saveSession(d, onLogin),
+  });
+  return (
+    <AuthLayout
+      eyebrow="Academic operations"
+      title="Intelligent timetable planning, without the conflicts."
+      text="Sign in with the administrator account created during first-time setup."
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          mutation.mutate();
+        }}
+      >
+        <p className="eyebrow">Welcome back</p>
+        <h2>Sign in to continue</h2>
+        <label>
+          Email
+          <input
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+          />
+        </label>
+        <label>
+          Password
+          <input
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+          />
+        </label>
+        {mutation.error && (
+          <div className="error">{errorText(mutation.error)}</div>
+        )}
+        <button className="primary" disabled={mutation.isPending}>
+          {mutation.isPending ? "Signing in…" : "Sign in"}
+          <ChevronRight size={18} />
+        </button>
+      </form>
+    </AuthLayout>
+  );
+}
+function AuthLayout({
+  eyebrow,
+  title,
+  text,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  text: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <main className="login-page">
+      <section className="login-brand">
+        <div className="brand-mark">
+          <GraduationCap />
+        </div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        <p>{text}</p>
+        <div className="trust">
+          <ShieldCheck />
+          <span>Every generated schedule is independently validated.</span>
+        </div>
+      </section>
+      <section className="login-panel">{children}</section>
+    </main>
+  );
+}
 
-function Generate(){const qc=useQueryClient();const statusQ=useQuery({queryKey:['setup-status'],queryFn:setupStatus});const yearId=statusQ.data?.active_year?.id;const semQ=useQuery({queryKey:['semesters',yearId],queryFn:()=>semesters(yearId!),enabled:!!yearId});const ids=(semQ.data?.items||[]).map(x=>x.id);const check=useMutation({mutationFn:()=>validateSetup(yearId!,ids)});const mutation=useMutation({mutationFn:(mode:string)=>request<any>('/generation',{method:'POST',body:JSON.stringify({academic_year_id:yearId,semester_offering_ids:ids,solver_mode:mode,time_limit_seconds:20,random_seed:42})}),onSuccess:()=>qc.invalidateQueries({queryKey:['timetable']})});const [mode,setMode]=useState('hybrid');const begin=async()=>{const result=await check.mutateAsync();if(result.valid)mutation.mutate(mode)};const ready=!!statusQ.data?.ready_for_validation&&ids.length===3;return <section className="page"><PageTitle eyebrow="Optimization engine" title="Validate and generate"/><div className="grid-2"><div className="card"><h3>Pre-generation gate</h3>{!ready&&<div className="warning">Setup is incomplete. Return to Start Setup and finish every required category.</div>}<div className="summary-list"><span>Academic year<strong>{statusQ.data?.active_year?.name||'Not configured'}</strong></span><span>Cohorts<strong>{ids.length}/3 configured</strong></span><span>Source<strong>Admin-entered records only</strong></span><span>Cross-checking<strong>Before and after solving</strong></span></div><label>Optimization mode<select value={mode} onChange={e=>setMode(e.target.value)}><option value="cp_sat">CP-SAT only</option><option value="hybrid">CP-SAT + gap minimization</option></select></label><button className="primary wide" disabled={!ready||mutation.isPending||check.isPending} onClick={begin}>{mutation.isPending?'Optimizing resources…':check.isPending?'Cross-checking inputs…':'Cross-check & generate'}<Play size={17}/></button>{check.data&&!check.data.valid&&<div className="error">{check.data.errors.map(e=><div key={e.code}>{e.message}</div>)}</div>}{mutation.error&&<div className="error">{errorText(mutation.error)}</div>}</div><div className="card result"><h3>Generation result</h3>{!mutation.data?<div className="empty"><FlaskConical/><p>No timetable is generated until the complete setup passes validation.</p></div>:<><div className={`result-status ${mutation.data.valid?'success':'failure'}`}><ShieldCheck/><div><strong>{mutation.data.status.toUpperCase()}</strong><span>{mutation.data.valid?'Independent validator passed':'Validation failed'}</span></div></div><div className="metric-grid compact"><Metric label="Sessions" value={String(mutation.data.metrics.scheduled_sessions)} detail="All cohorts" icon={<BookOpen/>}/><Metric label="Student gaps" value={String(mutation.data.metrics.student_gaps)} detail="Minimized" icon={<Clock3/>}/></div><NavLink className="secondary button-link" to="/timetable">Review timetable</NavLink></>}</div></div></section>}
+const adminNav = [
+  ["Dashboard", "/", LayoutDashboard],
+  ["Start Setup", "/prepare", BookOpen],
+  ["Faculty", "/faculty", Users],
+  ["Rooms & Labs", "/rooms", Building2],
+  ["Reservations", "/reservations", Clock3],
+  ["Generate", "/generate", Play],
+  ["Timetable", "/timetable", CalendarDays],
+  ["Analytics", "/analytics", BarChart3],
+] as const;
+const viewerNav = [
+  ["My Timetable", "/timetable", CalendarDays],
+  ["Download", "/download", Download],
+] as const;
+function Shell({ user, logout }: { user: User; logout: () => void }) {
+  const [open, setOpen] = useState(false);
+  const status = useQuery({
+    queryKey: ["setup-status"],
+    queryFn: setupStatus,
+    enabled: user.role === "admin",
+  });
+  const nav = user.role === "admin" ? adminNav : viewerNav;
+  return (
+    <div className="app-shell">
+      <aside className={open ? "open" : ""}>
+        <div className="logo">
+          <div>
+            <School />
+          </div>
+          <span>
+            Chronos<strong>Academic</strong>
+          </span>
+          <button className="close" onClick={() => setOpen(false)}>
+            <X />
+          </button>
+        </div>
+        <nav>
+          {nav.map(([label, to, Icon]) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === "/"}
+              onClick={() => setOpen(false)}
+            >
+              <Icon size={19} />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <div className="avatar">
+            {user.name
+              .split(" ")
+              .map((x) => x[0])
+              .slice(0, 2)
+              .join("")}
+          </div>
+          <div>
+            <strong>{user.name}</strong>
+            <span>{user.role}</span>
+          </div>
+          <button onClick={logout} title="Sign out">
+            <LogOut size={18} />
+          </button>
+        </div>
+      </aside>
+      <main className="content">
+        <header>
+          <button className="menu" onClick={() => setOpen(true)}>
+            <Menu />
+          </button>
+          <div>
+            <span className="term">
+              {status.data?.active_year?.name || "Academic setup pending"}
+            </span>
+            <span
+              className={
+                status.data?.ready_for_validation
+                  ? "status-dot"
+                  : "status-dot pending"
+              }
+            >
+              {status.data?.ready_for_validation
+                ? "Ready to validate"
+                : "Setup in progress"}
+            </span>
+          </div>
+        </header>
+        <Routes>
+          <Route index element={<Dashboard user={user} />} />
+          <Route path="prepare" element={<Preparation />} />
+          <Route path="generate" element={<Generate />} />
+          <Route path="timetable" element={<TimetablePage />} />
+          <Route path="download" element={<DownloadPage />} />
+          <Route
+            path="faculty"
+            element={<MasterList resource="faculty" title="Faculty" />}
+          />
+          <Route
+            path="rooms"
+            element={
+              <MasterList resource="rooms" title="Rooms & Laboratories" />
+            }
+          />
+          <Route
+            path="reservations"
+            element={
+              <MasterList resource="reservations" title="Fixed Reservations" />
+            }
+          />
+          <Route path="analytics" element={<Analytics />} />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
 
-function TimetablePage(){const q=useQuery({queryKey:['timetable'],queryFn:timetable,retry:false});const options=useQuery({queryKey:['setup-options'],queryFn:setupOptions});const [semester,setSemester]=useState<number|0>(0);const semesterNumbers=useMemo(()=>[...new Set((q.data?.sessions||[]).map(s=>s.semester_number).filter(Boolean) as number[])].sort(),[q.data]);const sessions=(q.data?.sessions||[]).filter(s=>!semester||s.semester_number===semester);const firstDay=options.data?.time_slots[0]?.day;const slots=(options.data?.time_slots||[]).filter((x:any)=>x.day===firstDay).sort((a:any,b:any)=>a.period_index-b.period_index);return <section className="page"><PageTitle eyebrow="Generated schedule" title={semester?`Semester ${roman(semester)} timetable`:'Master timetable'}><div className="actions"><select value={semester} onChange={e=>setSemester(Number(e.target.value))}><option value={0}>All semesters</option>{semesterNumbers.map(n=><option value={n} key={n}>Semester {roman(n)}</option>)}</select><button className="secondary" onClick={downloadCsv}><Download size={17}/>CSV</button></div></PageTitle>{q.isLoading?<div className="loading">Loading timetable…</div>:q.error?<EmptyState text="No generated timetable exists yet."/>:<TimetableGrid sessions={sessions} slots={slots}/>}</section>}
-async function downloadCsv(){const response=await fetch('/api/export/latest.csv',{headers:{Authorization:`Bearer ${localStorage.getItem('timetable_token')}`}});if(!response.ok)return;const blob=await response.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='timetable.csv';a.click();URL.revokeObjectURL(url)}
-function TimetableGrid({sessions,slots}:{sessions:Session[];slots:any[]}){const periods=slots.length?slots:Array.from({length:8},(_,i)=>({period_index:i,start_time:`${10+i}:00`,end_time:`${11+i}:00`,blocked:i===3}));return <div className="timetable-wrap"><div className="timetable"><div className="corner">Time</div>{DAYS.map(d=><div className="day-head" key={d}>{d}</div>)}{periods.map((period:any)=><div className="row" key={period.period_index}><div className={`time ${period.blocked?'lunch':''}`}>{period.blocked?'Lunch':`${period.start_time}–${period.end_time}`}</div>{DAYS.map(day=>{const found=sessions.filter(s=>s.day===day&&s.start_period===period.period_index);return <div className={`slot ${period.blocked?'lunch':''}`} key={day}>{found.map(s=><div className={`session ${s.kind==='lab'||s.duration_periods>1?'lab':s.kind==='elective'?'elective':''}`} key={s.id}><strong>{s.course_code} · {s.course_name}</strong><span>{s.room_code} · {s.faculty_names.join(', ')}</span><small>Semester {roman(s.semester_number||0)}{s.duration_periods>1?` · ${s.duration_periods} periods`:''}</small></div>)}</div>})}</div>)}</div></div>}
+function PageTitle({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="page-title">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+      </div>
+      {children}
+    </div>
+  );
+}
+function Metric({
+  label,
+  value,
+  detail,
+  icon,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="metric">
+      <div className="metric-icon">{icon}</div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+function Dashboard({ user }: { user: User }) {
+  const status = useQuery({
+    queryKey: ["setup-status"],
+    queryFn: setupStatus,
+    enabled: user.role === "admin",
+  });
+  const runs = useQuery({
+    queryKey: ["analytics"],
+    queryFn: () => request<any>("/analytics/summary"),
+    enabled: user.role === "admin",
+  });
+  if (user.role !== "admin")
+    return (
+      <section className="page">
+        <PageTitle
+          eyebrow={`${user.role} workspace`}
+          title={`Welcome, ${user.name}`}
+        />
+        <div className="hero-card">
+          <div>
+            <h2>Your weekly timetable</h2>
+            <NavLink className="primary button-link" to="/timetable">
+              Open timetable
+            </NavLink>
+          </div>
+          <CalendarDays size={90} />
+        </div>
+      </section>
+    );
+  const s = status.data;
+  return (
+    <section className="page">
+      <PageTitle
+        eyebrow="Admin-first workflow"
+        title="Build your timetable from the beginning"
+      >
+        <NavLink className="primary button-link" to="/prepare">
+          Continue setup
+          <ChevronRight size={18} />
+        </NavLink>
+      </PageTitle>
+      <p className="lead">
+        No academic data is supplied automatically. Complete each step with your
+        institution's real records before generation.
+      </p>
+      <div className="metric-grid">
+        <Metric
+          label="Semesters"
+          value={String(s?.counts.semesters ?? 0)}
+          detail="3 required"
+          icon={<GraduationCap />}
+        />
+        <Metric
+          label="Faculty"
+          value={String(s?.counts.faculty ?? 0)}
+          detail="Added by admin"
+          icon={<Users />}
+        />
+        <Metric
+          label="Rooms & labs"
+          value={String(s?.counts.rooms ?? 0)}
+          detail="Added by admin"
+          icon={<Building2 />}
+        />
+        <Metric
+          label="Successful runs"
+          value={String(runs.data?.successful_runs ?? 0)}
+          detail="Generated schedules"
+          icon={<ShieldCheck />}
+        />
+      </div>
+      <div className="grid-2">
+        <div className="card">
+          <h3>Preparation checklist</h3>
+          {s?.steps.map((step, i) => (
+            <div className="progress-row" key={step.key}>
+              <span className={`step ${step.complete ? "done" : ""}`}>
+                {step.complete ? <Check size={16} /> : i + 1}
+              </span>
+              <div>
+                <strong>{step.label}</strong>
+                <small>
+                  {step.complete ? "Complete" : "Required before generation"}
+                </small>
+              </div>
+              {step.complete && <ShieldCheck size={18} />}
+            </div>
+          ))}
+        </div>
+        <div className={`card ${s?.ready_for_validation ? "accent" : ""}`}>
+          <p className="eyebrow">Next action</p>
+          <h2>
+            {s?.ready_for_validation
+              ? "Cross-check and generate"
+              : "Continue entering records"}
+          </h2>
+          <p>
+            {s?.ready_for_validation
+              ? "All required categories contain data. The validator will now check capacities, assignments and conflicts."
+              : "Follow the setup order so later forms can use the earlier records in dropdown menus."}
+          </p>
+          <NavLink
+            className="primary button-link"
+            to={s?.ready_for_validation ? "/generate" : "/prepare"}
+          >
+            {s?.ready_for_validation ? "Go to generation" : "Open setup"}
+          </NavLink>
+        </div>
+      </div>
+    </section>
+  );
+}
 
-function MasterList({resource,title}:{resource:string;title:string}){const q=useQuery({queryKey:[resource],queryFn:()=>list(resource)});const options=useQuery({queryKey:['setup-options'],queryFn:setupOptions});const [adding,setAdding]=useState(false);const prerequisite=resource==='faculty'?options.data?.departments.length:resource==='rooms'?options.data?.departments.length:options.data?.academic_years.length&&options.data?.rooms.length;return <section className="page"><PageTitle eyebrow="Admin master data" title={title}><button className="primary" disabled={!prerequisite} onClick={()=>setAdding(true)}>Add record</button></PageTitle>{!prerequisite&&<div className="warning">Complete the academic foundation first so this form can use valid dropdown options.</div>}{adding&&options.data&&<CreateForm resource={resource} options={options.data} close={()=>setAdding(false)}/>}<div className="card table-card">{q.isLoading?'Loading…':q.error?<div className="error">{errorText(q.error)}</div>:!q.data?.items.length?<EmptyState text={`No ${title.toLowerCase()} added yet.`}/>:<table><thead><tr>{Object.keys(q.data.items[0]).filter(k=>!['features','password_hash'].includes(k)).slice(0,7).map(k=><th key={k}>{k.replaceAll('_',' ')}</th>)}</tr></thead><tbody>{q.data.items.map((item:any)=><tr key={item.id}>{Object.entries(item).filter(([k])=>!['features','password_hash'].includes(k)).slice(0,7).map(([k,v])=><td key={k}>{Array.isArray(v)?v.join(', '):String(v??'—')}</td>)}</tr>)}</tbody></table>}<div className="table-foot">{q.data?.total||0} records</div></div></section>}
-function CreateForm({resource,options,close}:{resource:string;options:any;close:()=>void}){const qc=useQueryClient();const year=options.academic_years[0];const firstDepartment=options.departments[0];const firstRoom=options.rooms[0];const defaults:any=resource==='faculty'?{faculty_code:'',name:'',email:'',home_department_id:firstDepartment?.id,weekly_limit:18,daily_limit:6,max_consecutive:3}:resource==='rooms'?{code:'',name:'',department_id:firstDepartment?.id,capacity:60,room_type:'theory',features:[]}:{academic_year_id:year?.id,day:'Monday',start_period:0,duration_periods:1,room_id:firstRoom?.id,description:''};const [form,setForm]=useState<any>(defaults);const mutation=useMutation({mutationFn:()=>create(resource,form),onSuccess:()=>{qc.invalidateQueries({queryKey:[resource]});qc.invalidateQueries({queryKey:['setup-options']});qc.invalidateQueries({queryKey:['setup-status']});close()}});const fields=Object.keys(defaults);function update(key:string,value:string){const numeric=['home_department_id','weekly_limit','daily_limit','max_consecutive','department_id','capacity','academic_year_id','start_period','duration_periods','room_id'];setForm({...form,[key]:numeric.includes(key)?Number(value):key==='features'?value.split(',').map(x=>x.trim()).filter(Boolean):value})}return <Modal title={`Add ${resource.replace('rooms','room').replace('reservations','reservation')}`} close={close} submit={()=>mutation.mutate()} pending={mutation.isPending} error={mutation.error}>{fields.map(key=><label key={key}>{key.replaceAll('_',' ')}{['home_department_id','department_id'].includes(key)?<select value={form[key]} onChange={e=>update(key,e.target.value)}>{options.departments.map((d:any)=><option key={d.id} value={d.id}>{d.code} · {d.name}</option>)}</select>:key==='academic_year_id'?<select value={form[key]} onChange={e=>update(key,e.target.value)}>{options.academic_years.map((y:any)=><option key={y.id} value={y.id}>{y.name}</option>)}</select>:key==='room_id'?<select value={form[key]} onChange={e=>update(key,e.target.value)}>{options.rooms.map((r:any)=><option key={r.id} value={r.id}>{r.code} · {r.name}</option>)}</select>:key==='room_type'?<select value={form[key]} onChange={e=>update(key,e.target.value)}><option value="theory">Theory</option><option value="lab">Laboratory</option></select>:key==='day'?<select value={form[key]} onChange={e=>update(key,e.target.value)}>{DAYS.map(d=><option key={d}>{d}</option>)}</select>:<input required={!['features'].includes(key)} type={typeof form[key]==='number'?'number':key==='email'?'email':'text'} value={Array.isArray(form[key])?form[key].join(', '):form[key]??''} onChange={e=>update(key,e.target.value)}/>}</label>)}</Modal>}
-function Analytics(){const q=useQuery({queryKey:['analytics'],queryFn:()=>request<any>('/analytics/summary')});return <section className="page"><PageTitle eyebrow="Quality and operations" title="Analytics"/><div className="metric-grid"><Metric label="Successful runs" value={String(q.data?.successful_runs??0)} detail="Recent runs" icon={<ShieldCheck/>}/><Metric label="Engine" value="CP-SAT" detail="Hybrid refinement" icon={<Settings/>}/></div><div className="card table-card"><h3>Recent generation runs</h3>{q.data?.recent_runs?.length?<table><thead><tr><th>Run</th><th>Status</th><th>Mode</th><th>Runtime</th><th>Objective</th></tr></thead><tbody>{q.data.recent_runs.map((r:any)=><tr key={r.id}><td>#{r.id}</td><td><span className="badge">{r.status}</span></td><td>{r.mode}</td><td>{r.runtime?.toFixed(3)}s</td><td>{r.objective}</td></tr>)}</tbody></table>:<EmptyState text="No generation runs yet."/>}</div></section>}
-function DownloadPage(){return <section className="page"><PageTitle eyebrow="Generated timetable" title="Download"/><div className="card download-card"><Download/><h2>Export current timetable</h2><button className="primary" onClick={downloadCsv}>Download CSV</button></div></section>}
+function Preparation() {
+  const qc = useQueryClient();
+  const statusQ = useQuery({
+    queryKey: ["setup-status"],
+    queryFn: setupStatus,
+  });
+  const optionsQ = useQuery({
+    queryKey: ["setup-options"],
+    queryFn: setupOptions,
+  });
+  const yearId = statusQ.data?.active_year?.id;
+  const semQ = useQuery({
+    queryKey: ["semesters", yearId],
+    queryFn: () => semesters(yearId!),
+    enabled: !!yearId,
+  });
+  const [selected, setSelected] = useState<number | null>(null);
+  const current = selected ?? semQ.data?.items[0]?.id;
+  const currentSemester = semQ.data?.items.find((x) => x.id === current);
+  const coursesQ = useQuery({
+    queryKey: ["offerings", current],
+    queryFn: () => offerings(current!),
+    enabled: !!current,
+  });
+  const [addingSubject, setAddingSubject] = useState(false);
+  const [editingSubject, setEditingSubject] = useState<any | null>(null);
+  const [addingSemester, setAddingSemester] = useState(false);
+  const [editingSemester, setEditingSemester] = useState<any | null>(null);
+  const [foundationEdit, setFoundationEdit] = useState<any | null>(null);
+  const [editingWeek, setEditingWeek] = useState(false);
+  const ids = (semQ.data?.items || []).map((x) => x.id);
+  const validation = useMutation({
+    mutationFn: () => validateSetup(yearId!, ids),
+  });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["setup-status"] });
+    qc.invalidateQueries({ queryKey: ["setup-options"] });
+    qc.invalidateQueries({ queryKey: ["semesters"] });
+  };
+  const deleteSemester = useMutation({
+    mutationFn: (id: number) => setupRemove("semesters", id),
+    onSuccess: () => {
+      setSelected(null);
+      refresh();
+    },
+  });
+  const deleteSubject = useMutation({
+    mutationFn: (id: number) => removeOffering(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["offerings", current] });
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
+    },
+  });
+  const deleteFoundation = useMutation({
+    mutationFn: ({ resource, id }: { resource: string; id: number }) => setupRemove(resource, id),
+    onSuccess: refresh,
+  });
+  const deleteWeek = useMutation({ mutationFn: () => setupRemoveRoot("working-week"), onSuccess: refresh });
+  const confirmDeleteSemester = () => {
+    if (
+      currentSemester &&
+      window.confirm(
+        `Delete Semester ${roman(currentSemester.semester_number)} and all its subjects?`,
+      )
+    )
+      deleteSemester.mutate(currentSemester.id);
+  };
+  const confirmDeleteSubject = (subject: any) => {
+    if (window.confirm(`Delete ${subject.code} - ${subject.name}?`))
+      deleteSubject.mutate(subject.id);
+  };
+  return (
+    <section className="page">
+      <PageTitle eyebrow="Admin data entry" title="Start from the beginning">
+        {yearId && (
+          <button
+            className="secondary"
+            onClick={() => validation.mutate()}
+            disabled={validation.isPending}
+          >
+            {validation.isPending ? "Checking…" : "Cross-check configuration"}
+            <ShieldCheck size={17} />
+          </button>
+        )}
+      </PageTitle>
+      <p className="lead">
+        Enter data in this order. Semester and subject records can be edited or
+        removed before generation.
+      </p>
+      <SetupChecklist status={statusQ.data} />
+      <div className="setup-section">
+        <h2>1. Academic foundation</h2>
+        <div className="setup-cards">
+          {!statusQ.data?.counts.institutes ? (
+            <QuickForm
+              title="Institute"
+              fields={[["name", "Institute name"]]}
+              submit={(data) => setupCreate("institutes", data)}
+              done={refresh}
+            />
+          ) : (
+            <CompleteCard title="Institute" onEdit={() => setFoundationEdit({ resource: "institutes", item: optionsQ.data?.institutes[0], fields: [["name", "Institute name"]] })} onDelete={() => window.confirm("Delete the institute record?") && deleteFoundation.mutate({resource:"institutes",id:optionsQ.data?.institutes[0].id})} />
+          )}
+          <QuickForm
+            title="Department"
+            fields={[
+              ["code", "Department code"],
+              ["name", "Department name"],
+            ]}
+            submit={(data) => setupCreate("departments", data)}
+            done={refresh}
+          />
+          {!statusQ.data?.counts.academic_years ? (
+            <QuickForm
+              title="Academic year"
+              fields={[["name", "Example: 2026-27"]]}
+              submit={(data) => setupCreate("academic-years", data)}
+              done={refresh}
+            />
+          ) : (
+            <CompleteCard title={`Academic year ${statusQ.data.active_year?.name}`} onEdit={() => setFoundationEdit({ resource: "academic-years", item: statusQ.data?.active_year, fields: [["name", "Academic year"]] })} onDelete={() => window.confirm("Delete this academic year?") && deleteFoundation.mutate({resource:"academic-years",id:statusQ.data!.active_year!.id})} />
+          )}{" "}
+          {!statusQ.data?.counts.time_slots ? (
+            <WorkingWeekForm done={refresh} />
+          ) : (
+            <CompleteCard title="Working days & periods" onEdit={() => setEditingWeek(true)} onDelete={() => window.confirm("Delete the working week configuration?") && deleteWeek.mutate()} />
+          )}
+        </div>
+        {!!optionsQ.data?.departments.length && <div className="foundation-list"><h3>Departments</h3>{optionsQ.data.departments.map((department: any) => <div key={department.id}><span><strong>{department.code}</strong> · {department.name}</span><div className="record-actions"><button className="icon-button" onClick={() => setFoundationEdit({ resource: "departments", item: department, fields: [["code", "Department code"], ["name", "Department name"]] })}><Pencil size={15}/></button><button className="icon-button danger" onClick={() => window.confirm(`Delete ${department.name}?`) && deleteFoundation.mutate({resource:"departments",id:department.id})}><Trash2 size={15}/></button></div></div>)}</div>}
+      </div>
+      <div className="setup-section">
+        <div className="card-head">
+          <div>
+            <h2>2. Semester cohorts and subjects</h2>
+            <p className="muted">
+              First add faculty and rooms from the side menu. Then create
+              exactly three combined cohorts.
+            </p>
+          </div>
+          <button
+            className="primary"
+            disabled={
+              !yearId ||
+              !optionsQ.data?.departments.length ||
+              !optionsQ.data?.rooms.some(
+                (r: any) => r.room_type === "theory",
+              ) ||
+              ids.length >= 3
+            }
+            onClick={() => setAddingSemester(true)}
+          >
+            Add semester
+          </button>
+        </div>
+        {ids.length === 0 ? (
+          <EmptyState text="No semesters yet. Add faculty and theory rooms, then create the first semester." />
+        ) : (
+          <>
+            <div className="semester-tabs">
+              {semQ.data?.items.map((s) => (
+                <button
+                  className={current === s.id ? "active" : ""}
+                  onClick={() => setSelected(s.id)}
+                  key={s.id}
+                >
+                  <span>Semester {roman(s.semester_number)}</span>
+                  <small>
+                    {s.strength} students ·{" "}
+                    {roomName(optionsQ.data, s.home_room_id)}
+                  </small>
+                </button>
+              ))}
+            </div>
+            <div className="card">
+              <div className="card-head">
+                <div>
+                  <p className="eyebrow">
+                    Semester{" "}
+                    {roman(
+                      semQ.data?.items.find((x) => x.id === current)
+                        ?.semester_number || 0,
+                    )}
+                  </p>
+                  <h2>Subjects and allocations</h2>
+                </div>
+                <div className="record-actions">
+                  <button className="icon-button" title="Edit semester" onClick={() => setEditingSemester(currentSemester)}><Pencil size={17} /></button>
+                  <button className="icon-button danger" title="Delete semester" onClick={confirmDeleteSemester}><Trash2 size={17} /></button>
+                  <button className="primary" disabled={!optionsQ.data?.faculty.length || !optionsQ.data?.rooms.length} onClick={() => setAddingSubject(true)}>Add subject</button>
+                </div>
+              </div>
+              {coursesQ.data?.items.length ? (
+                <div className="offering-grid">
+                  {coursesQ.data.items.map((o: any) => (
+                    <div className={`offering ${o.kind}`} key={o.id}>
+                      <div className="offering-head">
+                        <div><span className="badge">{o.kind}</span><h3>{o.code} · {o.name}</h3></div>
+                        <div className="record-actions">
+                          <button className="icon-button" title="Edit subject" onClick={() => setEditingSubject(o)}><Pencil size={15} /></button>
+                          <button className="icon-button danger" title="Delete subject" onClick={() => confirmDeleteSubject(o)}><Trash2 size={15} /></button>
+                        </div>
+                      </div>
+                      <div className="offering-meta">
+                        <span>
+                          <Clock3 /> {o.sessions_per_week} ×{" "}
+                          {o.duration_periods} period
+                          {o.duration_periods > 1 ? "s" : ""}
+                        </span>
+                        <span>
+                          <Users /> {o.enrollment} students
+                        </span>
+                        <span>
+                          <Users /> {facultyNames(optionsQ.data, o.faculty_ids)}
+                        </span>
+                        <span>
+                          <Building2 />{" "}
+                          {roomNames(optionsQ.data, o.eligible_room_ids)}
+                        </span>
+                      </div>
+                      {o.elective_group && (
+                        <small>
+                          Parallel elective group: {o.elective_group}
+                        </small>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState text="No subjects added for this semester." />
+              )}
+            </div>
+          </>
+        )}
+      </div>
+      {validation.data && (
+        <div className={validation.data.valid ? "validation-ok" : "error"}>
+          {validation.data.valid ? (
+            <>
+              <ShieldCheck />
+              Configuration is complete and solver-ready.
+            </>
+          ) : (
+            validation.data.errors.map((e) => (
+              <div key={e.code}>{e.message}</div>
+            ))
+          )}
+        </div>
+      )}
+      {(addingSemester || editingSemester) && yearId && optionsQ.data && (
+        <SemesterForm
+          yearId={yearId}
+          options={optionsQ.data}
+          initial={editingSemester}
+          close={() => { setAddingSemester(false); setEditingSemester(null); }}
+        />
+      )}{" "}
+      {(addingSubject || editingSubject) && current && optionsQ.data && (
+        <SubjectForm
+          semesterId={current}
+          options={optionsQ.data}
+          initial={editingSubject}
+          close={() => { setAddingSubject(false); setEditingSubject(null); }}
+        />
+      )}
+      {(deleteSemester.error || deleteSubject.error) && <div className="error">{errorText(deleteSemester.error || deleteSubject.error)}</div>}
+      {foundationEdit && <FoundationForm {...foundationEdit} close={() => setFoundationEdit(null)} done={refresh} />}
+      {editingWeek && <WorkingWeekForm initial={optionsQ.data?.time_slots} close={() => setEditingWeek(false)} done={refresh} />}
+      {(deleteFoundation.error || deleteWeek.error) && <div className="error">{errorText(deleteFoundation.error || deleteWeek.error)}</div>}
+    </section>
+  );
+}
+function SetupChecklist({ status }: { status?: SetupStatus }) {
+  return (
+    <div className="flow-strip">
+      {status?.steps.map((s, i) => (
+        <div className={s.complete ? "complete" : ""} key={s.key}>
+          <span>{s.complete ? <Check size={15} /> : i + 1}</span>
+          <strong>{s.label}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+function CompleteCard({ title, onEdit, onDelete }: { title: string; onEdit?: () => void; onDelete?: () => void }) {
+  return (
+    <div className="quick-card complete-card">
+      <ShieldCheck />
+      <h3>{title}</h3>
+      <p>Configured</p>
+      {(onEdit || onDelete) && <div className="record-actions"><button className="icon-button" title="Edit" onClick={onEdit}><Pencil size={15}/></button>{onDelete && <button className="icon-button danger" title="Delete" onClick={onDelete}><Trash2 size={15}/></button>}</div>}
+    </div>
+  );
+}
+function FoundationForm({resource,item,fields,close,done}:{resource:string;item:any;fields:string[][];close:()=>void;done:()=>void}){
+  const [form,setForm]=useState<any>(Object.fromEntries(fields.map(([key])=>[key,item[key]])));
+  const mutation=useMutation({mutationFn:()=>setupUpdate(resource,item.id,form),onSuccess:()=>{done();close()}});
+  return <Modal title={`Edit ${resource.replace("academic-years","academic year").replace("institutes","institute").replace("departments","department")}`} close={close} submit={()=>mutation.mutate()} pending={mutation.isPending} error={mutation.error}>{fields.map(([key,label])=><label key={key}>{label}<input required value={form[key]||""} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}</Modal>
+}
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="empty">
+      <BookOpen />
+      <p>{text}</p>
+    </div>
+  );
+}
+function QuickForm({
+  title,
+  fields,
+  submit,
+  done,
+}: {
+  title: string;
+  fields: string[][];
+  submit: (d: any) => Promise<any>;
+  done: () => void;
+}) {
+  const [form, setForm] = useState<Record<string, string>>({});
+  const mutation = useMutation({
+    mutationFn: () => submit(form),
+    onSuccess: () => {
+      setForm({});
+      done();
+    },
+  });
+  return (
+    <form
+      className="quick-card"
+      onSubmit={(e) => {
+        e.preventDefault();
+        mutation.mutate();
+      }}
+    >
+      <h3>{title}</h3>
+      {fields.map(([key, label]) => (
+        <label key={key}>
+          {label}
+          <input
+            required
+            value={form[key] || ""}
+            onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+          />
+        </label>
+      ))}
+      {mutation.error && (
+        <div className="error">{errorText(mutation.error)}</div>
+      )}
+      <button className="secondary" disabled={mutation.isPending}>
+        Save {title.toLowerCase()}
+      </button>
+    </form>
+  );
+}
+function WorkingWeekForm({ done, initial, close }: { done: () => void; initial?: any[]; close?: () => void }) {
+  const firstDay=initial?.[0]?.day;const daySlots=(initial||[]).filter(slot=>slot.day===firstDay);const lunch=daySlots.find(slot=>slot.blocked);
+  const [form, setForm] = useState({days: initial?.length ? DAYS.filter(day=>initial.some(slot=>slot.day===day)) : DAYS,start_hour: daySlots.length?Number(daySlots[0].start_time.split(":")[0]):10,periods_per_day: daySlots.length||8,lunch_after_period: lunch?.period_index??3});
+  const mutation = useMutation({
+    mutationFn: () => initial?.length ? setupUpdateRoot("working-week", form) : setupCreate("working-week", form),
+    onSuccess: () => {done();close?.()},
+  });
+  const fields=<>
+      <label>
+        Days
+        <input
+          value={form.days.join(", ")}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              days: e.target.value
+                .split(",")
+                .map((x) => x.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </label>
+      <label>
+        First class hour
+        <input
+          type="number"
+          value={form.start_hour}
+          onChange={(e) =>
+            setForm({ ...form, start_hour: Number(e.target.value) })
+          }
+        />
+      </label>
+      <label>
+        Periods per day
+        <input
+          type="number"
+          value={form.periods_per_day}
+          onChange={(e) =>
+            setForm({ ...form, periods_per_day: Number(e.target.value) })
+          }
+        />
+      </label>
+      <label>
+        Lunch after period #
+        <input
+          type="number"
+          min="0"
+          value={form.lunch_after_period}
+          onChange={(e) =>
+            setForm({ ...form, lunch_after_period: Number(e.target.value) })
+          }
+        />
+      </label>
+      {mutation.error && (
+        <div className="error">{errorText(mutation.error)}</div>
+      )}
+    </>;
+  if(initial?.length)return <Modal title="Edit working week" close={close!} submit={()=>mutation.mutate()} pending={mutation.isPending} error={mutation.error}>{fields}</Modal>;
+  return <form className="quick-card" onSubmit={(e)=>{e.preventDefault();mutation.mutate()}}><h3>Working week</h3>{fields}<button className="secondary">Save working hours</button></form>;
+}
+function SemesterForm({
+  yearId,
+  options,
+  initial,
+  close,
+}: {
+  yearId: number;
+  options: any;
+  initial?: any;
+  close: () => void;
+}) {
+  const qc = useQueryClient();
+  const rooms = options.rooms.filter((r: any) => r.room_type === "theory");
+  const [form, setForm] = useState(initial ? {
+    academic_year_id: initial.academic_year_id,
+    department_id: initial.department_id,
+    semester_number: initial.semester_number,
+    strength: initial.strength,
+    home_room_id: initial.home_room_id,
+    home_room_policy: initial.home_room_policy,
+  } : { academic_year_id: yearId, department_id: options.departments[0]?.id, semester_number: 3, strength: 60, home_room_id: rooms[0]?.id, home_room_policy: "hard" });
+  const mutation = useMutation({
+    mutationFn: () => initial ? setupUpdate("semesters", initial.id, form) : setupCreate("semesters", form),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["semesters"] });
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
+      close();
+    },
+  });
+  return (
+    <Modal
+      title={initial ? "Edit semester cohort" : "Add semester cohort"}
+      close={close}
+      submit={() => mutation.mutate()}
+      pending={mutation.isPending}
+      error={mutation.error}
+    >
+      <label>
+        Department
+        <select
+          value={form.department_id}
+          onChange={(e) =>
+            setForm({ ...form, department_id: Number(e.target.value) })
+          }
+        >
+          {options.departments.map((d: any) => (
+            <option key={d.id} value={d.id}>
+              {d.code} · {d.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Semester
+        <select
+          value={form.semester_number}
+          onChange={(e) =>
+            setForm({ ...form, semester_number: Number(e.target.value) })
+          }
+        >
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+            <option key={n} value={n}>
+              Semester {roman(n)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Class strength
+        <input
+          type="number"
+          min="1"
+          value={form.strength}
+          onChange={(e) =>
+            setForm({ ...form, strength: Number(e.target.value) })
+          }
+        />
+      </label>
+      <label>
+        Home classroom
+        <select
+          value={form.home_room_id}
+          onChange={(e) =>
+            setForm({ ...form, home_room_id: Number(e.target.value) })
+          }
+        >
+          {rooms.map((r: any) => (
+            <option key={r.id} value={r.id}>
+              {r.code} · capacity {r.capacity}
+            </option>
+          ))}
+        </select>
+      </label>
+    </Modal>
+  );
+}
+function Modal({
+  title,
+  close,
+  submit,
+  pending,
+  error,
+  children,
+}: {
+  title: string;
+  close: () => void;
+  submit: () => void;
+  pending: boolean;
+  error: unknown;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <form
+        className="modal"
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <div className="modal-head">
+          <div>
+            <p className="eyebrow">Admin entry</p>
+            <h2>{title}</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={close}>
+            <X />
+          </button>
+        </div>
+        <div className="form-grid">{children}</div>
+        {!!error && <div className="error">{errorText(error)}</div>}
+        <div className="modal-actions">
+          <button type="button" className="secondary" onClick={close}>
+            Cancel
+          </button>
+          <button className="primary" disabled={pending}>
+            {pending ? "Saving…" : "Save record"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function roman(n: number) {
+  return (
+    ({ 3: "III", 5: "V", 7: "VII" } as Record<number, string>)[n] || String(n)
+  );
+}
+function facultyNames(options: any, ids: number[]) {
+  return ids
+    .map(
+      (id) =>
+        options?.faculty.find((f: any) => f.id === id)?.name ||
+        `Faculty #${id}`,
+    )
+    .join(", ");
+}
+function roomNames(options: any, ids: number[]) {
+  return ids.map((id) => roomName(options, id)).join(", ");
+}
+function roomName(options: any, id: number) {
+  const r = options?.rooms.find((x: any) => x.id === id);
+  return r ? `${r.code} · ${r.name}` : `Room #${id}`;
+}
+function SubjectForm({
+  semesterId,
+  options,
+  initial,
+  close,
+}: {
+  semesterId: number;
+  options: any;
+  initial?: any;
+  close: () => void;
+}) {
+  const qc = useQueryClient();
+  const firstTheory = options.rooms.find((r: any) => r.room_type === "theory");
+  const [form, setForm] = useState<any>(initial ? {
+    ...initial,
+    participant_group: initial.participant_group_ids?.[0] || null,
+  } : {
+    semester_offering_id: semesterId,
+    code: "",
+    name: "",
+    kind: "theory",
+    sessions_per_week: 3,
+    duration_periods: 1,
+    enrollment: 60,
+    faculty_ids: [options.faculty[0]?.id],
+    eligible_room_ids: firstTheory ? [firstTheory.id] : [],
+    required_features: [],
+    participant_group: null,
+    elective_group: null,
+    parallel_elective: false,
+    fixed_day: null,
+    fixed_period: null,
+    fixed_room_id: null,
+  });
+  const mutation = useMutation({
+    mutationFn: () => initial ? updateOffering(initial.id, form) : addOffering(form),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["offerings", semesterId] });
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
+      close();
+    },
+  });
+  const set = (key: string, value: any) => setForm({ ...form, [key]: value });
+  const selectKind = (kind: string) => {
+    const eligible = options.rooms.find((room: any) =>
+      kind === "lab" ? room.room_type === "lab" : room.room_type === "theory",
+    );
+    setForm({
+      ...form,
+      kind,
+      duration_periods: kind === "lab" ? 2 : 1,
+      eligible_room_ids: eligible ? [eligible.id] : [],
+    });
+  };
+  return (
+    <Modal
+      title={initial ? "Edit subject and allocation" : "Add subject and allocation"}
+      close={close}
+      submit={() => mutation.mutate()}
+      pending={mutation.isPending}
+      error={mutation.error}
+    >
+      <label>
+        Subject code
+        <input
+          required
+          value={form.code}
+          onChange={(e) => set("code", e.target.value)}
+        />
+      </label>
+      <label>
+        Subject name
+        <input
+          required
+          value={form.name}
+          onChange={(e) => set("name", e.target.value)}
+        />
+      </label>
+      <label>
+        Activity type
+        <select value={form.kind} onChange={(e) => selectKind(e.target.value)}>
+          <option value="theory">Theory</option>
+          <option value="lab">Laboratory</option>
+          <option value="elective">Elective</option>
+        </select>
+      </label>
+      <label>
+        Classes per week
+        <input
+          type="number"
+          min="1"
+          max="10"
+          value={form.sessions_per_week}
+          onChange={(e) => set("sessions_per_week", Number(e.target.value))}
+        />
+      </label>
+      <label>
+        Duration in periods
+        <input
+          type="number"
+          min={form.kind === "lab" ? 2 : 1}
+          max={form.kind === "lab" ? 2 : 4}
+          disabled={form.kind === "lab"}
+          value={form.duration_periods}
+          onChange={(e) => set("duration_periods", Number(e.target.value))}
+        />
+      </label>
+      <label>
+        Students enrolled
+        <input
+          type="number"
+          min="1"
+          value={form.enrollment}
+          onChange={(e) => set("enrollment", Number(e.target.value))}
+        />
+      </label>
+      <label>
+        Faculty
+        <select
+          value={form.faculty_ids[0]}
+          onChange={(e) => set("faculty_ids", [Number(e.target.value)])}
+        >
+          {options.faculty.map((f: any) => (
+            <option value={f.id} key={f.id}>
+              {f.faculty_code} · {f.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        {form.kind === "lab" ? "Laboratory" : "Eligible room"}
+        <select
+          required
+          value={form.eligible_room_ids[0] || ""}
+          onChange={(e) => set("eligible_room_ids", [Number(e.target.value)])}
+        >
+          {options.rooms
+            .filter((r: any) =>
+              form.kind === "lab"
+                ? r.room_type === "lab"
+                : r.room_type === "theory",
+            )
+            .map((r: any) => (
+              <option value={r.id} key={r.id}>
+                {r.code} · capacity {r.capacity}
+              </option>
+            ))}
+        </select>
+      </label>
+      {form.kind === "lab" && (
+        <label>
+          Batch/group name
+          <input
+            required
+            placeholder="Example: SEM-5-B1"
+            value={form.participant_group || ""}
+            onChange={(e) => set("participant_group", e.target.value)}
+          />
+        </label>
+      )}
+      {form.kind === "elective" && (
+        <>
+          <label>
+            Elective group
+            <input
+              required
+              placeholder="Example: SEM-7-ELECTIVE"
+              value={form.elective_group || ""}
+              onChange={(e) => set("elective_group", e.target.value)}
+            />
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={form.parallel_elective}
+              onChange={(e) => set("parallel_elective", e.target.checked)}
+            />{" "}
+            Schedule alternatives together
+          </label>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function Generate() {
+  const qc = useQueryClient();
+  const statusQ = useQuery({
+    queryKey: ["setup-status"],
+    queryFn: setupStatus,
+  });
+  const yearId = statusQ.data?.active_year?.id;
+  const semQ = useQuery({
+    queryKey: ["semesters", yearId],
+    queryFn: () => semesters(yearId!),
+    enabled: !!yearId,
+  });
+  const ids = (semQ.data?.items || []).map((x) => x.id);
+  const check = useMutation({ mutationFn: () => validateSetup(yearId!, ids) });
+  const mutation = useMutation({
+    mutationFn: (mode: string) =>
+      request<any>("/generation", {
+        method: "POST",
+        body: JSON.stringify({
+          academic_year_id: yearId,
+          semester_offering_ids: ids,
+          solver_mode: mode,
+          time_limit_seconds: 20,
+          random_seed: 42,
+        }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["timetable"] }),
+  });
+  const [mode, setMode] = useState("hybrid");
+  const begin = async () => {
+    const result = await check.mutateAsync();
+    if (result.valid) mutation.mutate(mode);
+  };
+  const ready = !!statusQ.data?.ready_for_validation && ids.length === 3;
+  return (
+    <section className="page">
+      <PageTitle eyebrow="Optimization engine" title="Validate and generate" />
+      <div className="grid-2">
+        <div className="card">
+          <h3>Pre-generation gate</h3>
+          {!ready && (
+            <div className="warning">
+              Setup is incomplete. Return to Start Setup and finish every
+              required category.
+            </div>
+          )}
+          <div className="summary-list">
+            <span>
+              Academic year
+              <strong>
+                {statusQ.data?.active_year?.name || "Not configured"}
+              </strong>
+            </span>
+            <span>
+              Cohorts<strong>{ids.length}/3 configured</strong>
+            </span>
+            <span>
+              Source<strong>Admin-entered records only</strong>
+            </span>
+            <span>
+              Cross-checking<strong>Before and after solving</strong>
+            </span>
+          </div>
+          <label>
+            Optimization mode
+            <select value={mode} onChange={(e) => setMode(e.target.value)}>
+              <option value="cp_sat">CP-SAT only</option>
+              <option value="hybrid">CP-SAT + gap minimization</option>
+            </select>
+          </label>
+          <button
+            className="primary wide"
+            disabled={!ready || mutation.isPending || check.isPending}
+            onClick={begin}
+          >
+            {mutation.isPending
+              ? "Optimizing resources…"
+              : check.isPending
+                ? "Cross-checking inputs…"
+                : "Cross-check & generate"}
+            <Play size={17} />
+          </button>
+          {check.data && !check.data.valid && (
+            <div className="error">
+              {check.data.errors.map((e) => (
+                <div key={e.code}>{e.message}</div>
+              ))}
+            </div>
+          )}
+          {mutation.error && (
+            <div className="error">{errorText(mutation.error)}</div>
+          )}
+        </div>
+        <div className="card result">
+          <h3>Generation result</h3>
+          {!mutation.data ? (
+            <div className="empty">
+              <FlaskConical />
+              <p>
+                No timetable is generated until the complete setup passes
+                validation.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div
+                className={`result-status ${mutation.data.valid ? "success" : "failure"}`}
+              >
+                <ShieldCheck />
+                <div>
+                  <strong>{mutation.data.status.toUpperCase()}</strong>
+                  <span>
+                    {mutation.data.valid
+                      ? "Independent validator passed"
+                      : "Validation failed"}
+                  </span>
+                </div>
+              </div>
+              <div className="metric-grid compact">
+                <Metric
+                  label="Sessions"
+                  value={String(mutation.data.metrics.scheduled_sessions)}
+                  detail="All cohorts"
+                  icon={<BookOpen />}
+                />
+                <Metric
+                  label="Student gaps"
+                  value={String(mutation.data.metrics.student_gaps)}
+                  detail="Minimized"
+                  icon={<Clock3 />}
+                />
+              </div>
+              <NavLink className="secondary button-link" to="/timetable">
+                Review timetable
+              </NavLink>
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TimetablePage() {
+  const q = useQuery({
+    queryKey: ["timetable"],
+    queryFn: timetable,
+    retry: false,
+  });
+  const [semester, setSemester] = useState<number | 0>(0);
+  const semesterNumbers = useMemo(
+    () =>
+      [
+        ...new Set(
+          (q.data?.sessions || [])
+            .map((s) => s.semester_number)
+            .filter(Boolean) as number[],
+        ),
+      ].sort(),
+    [q.data],
+  );
+  const shownSemesters = semester ? [semester] : semesterNumbers;
+  return (
+    <section className="page">
+      <PageTitle
+        eyebrow="Generated schedule"
+        title={
+          semester
+            ? `Semester ${roman(semester)} timetable`
+            : "Master timetable"
+        }
+      >
+        <div className="actions">
+          <select
+            value={semester}
+            onChange={(e) => setSemester(Number(e.target.value))}
+          >
+            <option value={0}>All semesters</option>
+            {semesterNumbers.map((n) => (
+              <option value={n} key={n}>
+                Semester {roman(n)}
+              </option>
+            ))}
+          </select>
+          <button className="secondary" onClick={downloadCsv}>
+            <Download size={17} />
+            CSV
+          </button>
+          <button className="secondary" onClick={() => window.print()}>
+            <Printer size={17} />
+            Print
+          </button>
+        </div>
+      </PageTitle>
+      {q.isLoading ? (
+        <div className="loading">Loading timetable…</div>
+      ) : q.error ? (
+        <EmptyState text="No generated timetable exists yet." />
+      ) : (
+        <div className="official-timetables">
+          {shownSemesters.map((number) => (
+            <InstitutionalTimetable key={number} data={q.data!} semester={number} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+async function downloadCsv() {
+  const response = await fetch("/api/export/latest.csv", {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem("timetable_token")}`,
+    },
+  });
+  if (!response.ok) return;
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "timetable.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function InstitutionalTimetable({ data, semester }: { data: any; semester: number }) {
+  const sessions: Session[] = data.sessions.filter((s: Session) => s.semester_number === semester);
+  const semesterInfo = data.semesters.find((s: any) => s.semester_number === semester) || {};
+  const configuredDays = new Set(data.time_slots.map((slot: any) => slot.day));
+  const days = DAYS.filter((day) => configuredDays.has(day));
+  const firstDay = days[0];
+  const periods = data.time_slots.filter((slot: any) => slot.day === firstDay).sort((a: any, b: any) => a.period_index - b.period_index);
+  const subjects = data.subjects.filter((subject: any) => subject.semester_number === semester);
+  const isCovered = (day: string, period: number) => sessions.some((s) => s.day === day && s.start_period < period && s.start_period + s.duration_periods > period);
+  const totalLecture = subjects.filter((s: any) => s.kind !== "lab").reduce((sum: number, s: any) => sum + s.sessions_per_week * s.duration_periods, 0);
+  const totalPractical = subjects.filter((s: any) => s.kind === "lab").reduce((sum: number, s: any) => sum + s.sessions_per_week * s.duration_periods, 0);
+  return (
+    <article className="official-sheet">
+      <header className="official-header">
+        <h2>{data.institute_name || "Institute Name"}</h2>
+        <h3>Department of {semesterInfo.department_name || "Engineering"}</h3>
+        <strong>TIME-TABLE</strong>
+        <div><span>Year {Math.ceil(semester / 2)}</span><span>{data.academic_year}</span></div>
+        <div><span>Semester {roman(semester)}</span><span>ROOM NO: {semesterInfo.home_room_code || "-"}</span></div>
+      </header>
+      <div className="official-grid-wrap">
+        <table className="official-grid">
+          <thead><tr><th>Time / Day</th>{days.map((day) => <th key={day}>{day}</th>)}</tr></thead>
+          <tbody>{periods.map((period: any) => period.blocked ? (
+            <tr className="lunch-row" key={period.period_index}><th>{period.start_time} to {period.end_time}</th><td colSpan={days.length}>LUNCH BREAK</td></tr>
+          ) : (
+            <tr key={period.period_index}><th>{period.start_time} to {period.end_time}</th>{days.map((day) => {
+              if (isCovered(day, period.period_index)) return null;
+              const found = sessions.filter((s) => s.day === day && s.start_period === period.period_index);
+              const span = Math.max(1, ...found.map((s) => s.duration_periods));
+              return <td key={day} rowSpan={span} className={found.some((s) => s.kind === "lab") ? "practical-cell" : ""}>{found.map((s) => <div className="official-session" key={s.id}><strong>{s.course_code}</strong>{s.participant_group_ids.some((g) => /B\d|E\d/i.test(g)) && <small>{s.participant_group_ids.join(", ")}</small>}<span>{s.faculty_codes?.length ? `(${s.faculty_codes.join(", ")})` : ""}</span><em>{s.room_code}</em></div>)}</td>;
+            })}</tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <div className="official-footer"><div className="subject-key">{subjects.map((subject: any) => <div key={subject.id}><strong>{subject.code}</strong><span>{subject.name}</span></div>)}</div><table className="load-table"><thead><tr><th></th><th>L</th><th>T</th><th>P</th></tr></thead><tbody>{subjects.map((subject: any) => <tr key={subject.id}><td>{subject.code}</td><td>{subject.kind !== "lab" ? subject.sessions_per_week * subject.duration_periods : ""}</td><td></td><td>{subject.kind === "lab" ? subject.sessions_per_week * subject.duration_periods : ""}</td></tr>)}<tr><th>Total</th><th>{totalLecture}</th><th>0</th><th>{totalPractical}</th></tr></tbody></table></div>
+    </article>
+  );
+}
+
+function MasterList({ resource, title }: { resource: string; title: string }) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: [resource], queryFn: () => list(resource) });
+  const options = useQuery({
+    queryKey: ["setup-options"],
+    queryFn: setupOptions,
+  });
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
+  const deleting = useMutation({
+    mutationFn: (id: number) => remove(resource, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [resource] });
+      qc.invalidateQueries({ queryKey: ["setup-options"] });
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
+    },
+  });
+  const confirmDelete = (item: any) => {
+    const label = item.name || item.code || item.description || `record #${item.id}`;
+    if (window.confirm(`Delete ${label}? This cannot be undone.`)) deleting.mutate(item.id);
+  };
+  const prerequisite =
+    resource === "faculty"
+      ? options.data?.departments.length
+      : resource === "rooms"
+        ? options.data?.departments.length
+        : options.data?.academic_years.length && options.data?.rooms.length;
+  return (
+    <section className="page">
+      <PageTitle eyebrow="Admin master data" title={title}>
+        <button
+          className="primary"
+          disabled={!prerequisite}
+          onClick={() => setAdding(true)}
+        >
+          Add record
+        </button>
+      </PageTitle>
+      {!prerequisite && (
+        <div className="warning">
+          Complete the academic foundation first so this form can use valid
+          dropdown options.
+        </div>
+      )}
+      {(adding || editing) && options.data && (
+        <CreateForm
+          resource={resource}
+          options={options.data}
+          initial={editing}
+          close={() => { setAdding(false); setEditing(null); }}
+        />
+      )}
+      {deleting.error && <div className="error">{errorText(deleting.error)}</div>}
+      <div className="card table-card">
+        {q.isLoading ? (
+          "Loading…"
+        ) : q.error ? (
+          <div className="error">{errorText(q.error)}</div>
+        ) : !q.data?.items.length ? (
+          <EmptyState text={`No ${title.toLowerCase()} added yet.`} />
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                {Object.keys(q.data.items[0])
+                  .filter((k) => !["features", "password_hash"].includes(k))
+                  .slice(0, 7)
+                  .map((k) => (
+                    <th key={k}>{k.replaceAll("_", " ")}</th>
+                  ))}
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.items.map((item: any) => (
+                <tr key={item.id}>
+                  {Object.entries(item)
+                    .filter(([k]) => !["features", "password_hash"].includes(k))
+                    .slice(0, 7)
+                    .map(([k, v]) => (
+                      <td key={k}>
+                        {Array.isArray(v) ? v.join(", ") : String(v ?? "—")}
+                      </td>
+                    ))}
+                  <td><div className="record-actions"><button className="icon-button" title="Edit" onClick={() => setEditing(item)}><Pencil size={15} /></button><button className="icon-button danger" title="Delete" onClick={() => confirmDelete(item)}><Trash2 size={15} /></button></div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="table-foot">{q.data?.total || 0} records</div>
+      </div>
+    </section>
+  );
+}
+function CreateForm({
+  resource,
+  options,
+  initial,
+  close,
+}: {
+  resource: string;
+  options: any;
+  initial?: any;
+  close: () => void;
+}) {
+  const qc = useQueryClient();
+  const year = options.academic_years[0];
+  const firstDepartment = options.departments[0];
+  const firstRoom = options.rooms[0];
+  const defaults: any =
+    resource === "faculty"
+      ? {
+          faculty_code: "",
+          name: "",
+          email: "",
+          home_department_id: firstDepartment?.id,
+          weekly_limit: 18,
+          daily_limit: 6,
+          max_consecutive: 3,
+        }
+      : resource === "rooms"
+        ? {
+            code: "",
+            name: "",
+            department_id: firstDepartment?.id,
+            capacity: 60,
+            room_type: "theory",
+            features: [],
+          }
+        : {
+            academic_year_id: year?.id,
+            day: "Monday",
+            start_period: 0,
+            duration_periods: 1,
+            room_id: firstRoom?.id,
+            description: "",
+          };
+  const editable = initial ? Object.fromEntries(Object.keys(defaults).map((key) => [key, initial[key] ?? defaults[key]])) : defaults;
+  const [form, setForm] = useState<any>(editable);
+  const mutation = useMutation({
+    mutationFn: () => initial ? update(resource, initial.id, form) : create(resource, form),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [resource] });
+      qc.invalidateQueries({ queryKey: ["setup-options"] });
+      qc.invalidateQueries({ queryKey: ["setup-status"] });
+      close();
+    },
+  });
+  const fields = Object.keys(defaults);
+  function updateField(key: string, value: string) {
+    const numeric = [
+      "home_department_id",
+      "weekly_limit",
+      "daily_limit",
+      "max_consecutive",
+      "department_id",
+      "capacity",
+      "academic_year_id",
+      "start_period",
+      "duration_periods",
+      "room_id",
+    ];
+    setForm({
+      ...form,
+      [key]: numeric.includes(key)
+        ? Number(value)
+        : key === "features"
+          ? value
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean)
+          : value,
+    });
+  }
+  return (
+    <Modal
+      title={`${initial ? "Edit" : "Add"} ${resource.replace("rooms", "room").replace("reservations", "reservation")}`}
+      close={close}
+      submit={() => mutation.mutate()}
+      pending={mutation.isPending}
+      error={mutation.error}
+    >
+      {fields.map((key) => (
+        <label key={key}>
+          {key.replaceAll("_", " ")}
+          {["home_department_id", "department_id"].includes(key) ? (
+            <select
+              value={form[key]}
+              onChange={(e) => updateField(key, e.target.value)}
+            >
+              {options.departments.map((d: any) => (
+                <option key={d.id} value={d.id}>
+                  {d.code} · {d.name}
+                </option>
+              ))}
+            </select>
+          ) : key === "academic_year_id" ? (
+            <select
+              value={form[key]}
+              onChange={(e) => updateField(key, e.target.value)}
+            >
+              {options.academic_years.map((y: any) => (
+                <option key={y.id} value={y.id}>
+                  {y.name}
+                </option>
+              ))}
+            </select>
+          ) : key === "room_id" ? (
+            <select
+              value={form[key]}
+              onChange={(e) => updateField(key, e.target.value)}
+            >
+              {options.rooms.map((r: any) => (
+                <option key={r.id} value={r.id}>
+                  {r.code} · {r.name}
+                </option>
+              ))}
+            </select>
+          ) : key === "room_type" ? (
+            <select
+              value={form[key]}
+              onChange={(e) => updateField(key, e.target.value)}
+            >
+              <option value="theory">Theory</option>
+              <option value="lab">Laboratory</option>
+            </select>
+          ) : key === "day" ? (
+            <select
+              value={form[key]}
+              onChange={(e) => updateField(key, e.target.value)}
+            >
+              {DAYS.map((d) => (
+                <option key={d}>{d}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              required={!["features"].includes(key)}
+              type={
+                typeof form[key] === "number"
+                  ? "number"
+                  : key === "email"
+                    ? "email"
+                    : "text"
+              }
+              value={
+                Array.isArray(form[key])
+                  ? form[key].join(", ")
+                  : (form[key] ?? "")
+              }
+              onChange={(e) => updateField(key, e.target.value)}
+            />
+          )}
+        </label>
+      ))}
+    </Modal>
+  );
+}
+function Analytics() {
+  const q = useQuery({
+    queryKey: ["analytics"],
+    queryFn: () => request<any>("/analytics/summary"),
+  });
+  return (
+    <section className="page">
+      <PageTitle eyebrow="Quality and operations" title="Analytics" />
+      <div className="metric-grid">
+        <Metric
+          label="Successful runs"
+          value={String(q.data?.successful_runs ?? 0)}
+          detail="Recent runs"
+          icon={<ShieldCheck />}
+        />
+        <Metric
+          label="Engine"
+          value="CP-SAT"
+          detail="Hybrid refinement"
+          icon={<Settings />}
+        />
+      </div>
+      <div className="card table-card">
+        <h3>Recent generation runs</h3>
+        {q.data?.recent_runs?.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Status</th>
+                <th>Mode</th>
+                <th>Runtime</th>
+                <th>Objective</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.recent_runs.map((r: any) => (
+                <tr key={r.id}>
+                  <td>#{r.id}</td>
+                  <td>
+                    <span className="badge">{r.status}</span>
+                  </td>
+                  <td>{r.mode}</td>
+                  <td>{r.runtime?.toFixed(3)}s</td>
+                  <td>{r.objective}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyState text="No generation runs yet." />
+        )}
+      </div>
+    </section>
+  );
+}
+function DownloadPage() {
+  return (
+    <section className="page">
+      <PageTitle eyebrow="Generated timetable" title="Download" />
+      <div className="card download-card">
+        <Download />
+        <h2>Export current timetable</h2>
+        <button className="primary" onClick={downloadCsv}>
+          Download CSV
+        </button>
+      </div>
+    </section>
+  );
+}

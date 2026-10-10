@@ -3,11 +3,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.auth import bootstrap_admin, bootstrap_status
-from app.api.setup import create_academic_year, create_department, create_institute, create_working_week, setup_status
+from app.api.master_data import faculty_create, faculty_delete, faculty_update, reservation_create, reservation_delete, reservation_update, room_create, room_delete, room_update
+from app.api.setup import create_academic_year, create_course_offering, create_department, create_institute, create_semester, create_working_week, delete_course_offering, delete_semester, setup_status, update_course_offering, update_semester
 from app.db.session import Base
 from app.models.entities import User
 from app.schemas.auth import BootstrapAdminRequest
-from app.schemas.setup import AcademicYearCreate, DepartmentCreate, InstituteCreate, WorkingWeekCreate
+from app.schemas.master_data import FacultyCreate, ReservationCreate, RoomCreate
+from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DepartmentCreate, InstituteCreate, SemesterCreate, WorkingWeekCreate
 
 
 def empty_database():
@@ -41,3 +43,31 @@ def test_setup_status_starts_empty_and_tracks_admin_foundation():
     assert configured["counts"]["time_slots"] == 12
     assert configured["steps"][0]["complete"] is True
     assert configured["ready_for_validation"] is False
+
+
+def test_admin_can_create_update_and_delete_operational_records():
+    db = empty_database(); actor = User(email="admin@college.edu", name="Admin", password_hash="x", role="admin")
+    create_institute(InstituteCreate(name="Example Institute"), db, actor)
+    department = create_department(DepartmentCreate(code="EE", name="Electrical Engineering"), db, actor)
+    year = create_academic_year(AcademicYearCreate(name="2026-27"), db, actor)
+    create_working_week(WorkingWeekCreate(days=["Monday", "Tuesday"], start_hour=10, periods_per_day=6, lunch_after_period=3), db, actor)
+    faculty_body = FacultyCreate(faculty_code="F01", name="Teacher One", email="one@example.edu", home_department_id=department.id)
+    faculty = faculty_create(faculty_body, db, actor)
+    faculty = faculty_update(faculty.id, faculty_body.model_copy(update={"name": "Teacher Updated"}), db, actor)
+    assert faculty.name == "Teacher Updated"
+    room_body = RoomCreate(code="R1", name="Room One", department_id=department.id, capacity=70, room_type="theory", features=["projector"])
+    room = room_create(room_body, db, actor)
+    room = room_update(room.id, room_body.model_copy(update={"name": "Room Updated"}), db, actor)
+    assert room.name == "Room Updated"
+    reservation_body = ReservationCreate(academic_year_id=year.id, day="Monday", start_period=0, duration_periods=1, room_id=room.id, description="Meeting")
+    reservation = reservation_create(reservation_body, db, actor)
+    assert reservation_update(reservation.id, reservation_body.model_copy(update={"description": "Updated meeting"}), db, actor).description == "Updated meeting"
+    reservation_delete(reservation.id, db, actor)
+    semester_body = SemesterCreate(academic_year_id=year.id, department_id=department.id, semester_number=3, strength=60, home_room_id=room.id)
+    semester = create_semester(semester_body, db, actor)
+    assert update_semester(semester.id, semester_body.model_copy(update={"strength": 55}), db, actor).strength == 55
+    course_body = CourseOfferingCreate(semester_offering_id=semester.id, code="EE301", name="Networks", kind="theory", sessions_per_week=3, duration_periods=1, enrollment=55, faculty_ids=[faculty.id], eligible_room_ids=[room.id])
+    course = create_course_offering(course_body, db, actor)
+    assert update_course_offering(course.id, course_body.model_copy(update={"name": "Network Theory"}), db, actor).name == "Network Theory"
+    delete_course_offering(course.id, db, actor); delete_semester(semester.id, db, actor)
+    faculty_delete(faculty.id, db, actor); room_delete(room.id, db, actor)

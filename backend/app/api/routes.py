@@ -6,7 +6,7 @@ import csv
 import io
 from app.core.security import require_roles
 from app.db.session import get_db
-from app.models.entities import CourseOffering, Faculty, GenerationRun, Room, SemesterOffering, Timetable, TimetableSession, User
+from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, Timetable, TimetableSession, User
 from app.schemas.generation import GenerationRequest, GenerationResponse
 from app.services.generation import generate_problem
 
@@ -53,8 +53,15 @@ def latest_timetable(db: Session = Depends(get_db), user: User = Depends(require
     enriched = []
     for s in sessions:
         o = offerings.get(s.course_offering_id); semester = semesters.get(o.semester_offering_id) if o else None
-        enriched.append({"id": s.id, "course_offering_id": s.course_offering_id, "course_code": o.code if o else f"Course {s.course_offering_id}", "course_name": o.name if o else "Scheduled course", "kind": o.kind if o else ("lab" if s.duration_periods > 1 else "theory"), "semester_number": semester.semester_number if semester else None, "day": s.day, "start_period": s.start_period, "duration_periods": s.duration_periods, "room_id": s.room_id, "room_code": rooms[s.room_id].code if s.room_id in rooms else str(s.room_id), "faculty_ids": s.faculty_ids, "faculty_names": [faculty[x].name for x in s.faculty_ids if x in faculty], "participant_group_ids": s.participant_group_ids})
-    return {"id": table.id, "version": table.version, "status": table.status, "sessions": enriched}
+        enriched.append({"id": s.id, "course_offering_id": s.course_offering_id, "course_code": o.code if o else f"Course {s.course_offering_id}", "course_name": o.name if o else "Scheduled course", "kind": o.kind if o else ("lab" if s.duration_periods > 1 else "theory"), "semester_number": semester.semester_number if semester else None, "day": s.day, "start_period": s.start_period, "duration_periods": s.duration_periods, "room_id": s.room_id, "room_code": rooms[s.room_id].code if s.room_id in rooms else str(s.room_id), "faculty_ids": s.faculty_ids, "faculty_names": [faculty[x].name for x in s.faculty_ids if x in faculty], "faculty_codes": [faculty[x].faculty_code for x in s.faculty_ids if x in faculty], "participant_group_ids": s.participant_group_ids})
+    institute = db.scalar(select(Institute).order_by(Institute.id).limit(1))
+    year = db.get(AcademicYear, table.academic_year_id)
+    department_ids = {semester.department_id for semester in semesters.values()}
+    departments = {d.id: d for d in db.scalars(select(Department).where(Department.id.in_(department_ids))).all()} if department_ids else {}
+    time_slots = db.scalars(select(TimeSlot).order_by(TimeSlot.period_index, TimeSlot.day)).all()
+    subject_rows = [{"id": o.id, "semester_number": semesters[o.semester_offering_id].semester_number if o.semester_offering_id in semesters else None, "code": o.code, "name": o.name, "kind": o.kind, "sessions_per_week": o.sessions_per_week, "duration_periods": o.duration_periods, "faculty_names": [faculty[x].name for x in o.faculty_ids if x in faculty]} for o in offerings.values()]
+    semester_rows = [{"id": semester.id, "semester_number": semester.semester_number, "strength": semester.strength, "department_name": departments[semester.department_id].name if semester.department_id in departments else "", "department_code": departments[semester.department_id].code if semester.department_id in departments else "", "home_room_code": (db.get(Room, semester.home_room_id).code if semester.home_room_id and db.get(Room, semester.home_room_id) else "")} for semester in semesters.values()]
+    return {"id": table.id, "version": table.version, "status": table.status, "institute_name": institute.name if institute else "", "academic_year": year.name if year else "", "semesters": semester_rows, "subjects": subject_rows, "time_slots": [{"day": slot.day, "period_index": slot.period_index, "start_time": slot.start_time, "end_time": slot.end_time, "blocked": slot.blocked} for slot in time_slots], "sessions": enriched}
 
 
 @router.get("/export/latest.csv")

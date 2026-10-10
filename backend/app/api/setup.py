@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.core.security import require_roles
 from app.db.session import get_db
-from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, FixedReservation, Institute, Room, SemesterOffering, TimeSlot, User
+from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, FixedReservation, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, TimetableSession, User
 from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DepartmentCreate, InstituteCreate, SemesterCreate, WorkingWeekCreate
 from app.scheduling.database_problem import build_database_problem
 from app.scheduling.preprocessing import validate_problem
@@ -46,15 +46,61 @@ def create_institute(body: InstituteCreate, db: Session = Depends(get_db), _: Us
     item = Institute(name=body.name.strip()); db.add(item); db.commit(); db.refresh(item); return item
 
 
+@router.put("/institutes/{item_id}")
+def update_institute(item_id: int, body: InstituteCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(Institute, item_id)
+    if not item: raise HTTPException(404, "Institute not found")
+    item.name = body.name.strip(); db.commit(); db.refresh(item); return item
+
+
+@router.delete("/institutes/{item_id}", status_code=204)
+def delete_institute(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(Institute, item_id)
+    if not item: raise HTTPException(404, "Institute not found")
+    db.delete(item); db.commit(); return Response(status_code=204)
+
+
 @router.post("/departments", status_code=201)
 def create_department(body: DepartmentCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     item = Department(code=body.code.strip().upper(), name=body.name.strip()); db.add(item); db.commit(); db.refresh(item); return item
+
+
+@router.put("/departments/{item_id}")
+def update_department(item_id: int, body: DepartmentCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(Department, item_id)
+    if not item: raise HTTPException(404, "Department not found")
+    item.code = body.code.strip().upper(); item.name = body.name.strip(); db.commit(); db.refresh(item); return item
+
+
+@router.delete("/departments/{item_id}", status_code=204)
+def delete_department(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(Department, item_id)
+    if not item: raise HTTPException(404, "Department not found")
+    referenced = db.scalar(select(Faculty.id).where(Faculty.home_department_id == item_id).limit(1)) or db.scalar(select(Room.id).where(Room.department_id == item_id).limit(1)) or db.scalar(select(SemesterOffering.id).where(SemesterOffering.department_id == item_id).limit(1))
+    if referenced: raise HTTPException(409, "Department is used by faculty, rooms, or semesters. Remove those records first.")
+    db.delete(item); db.commit(); return Response(status_code=204)
 
 
 @router.post("/academic-years", status_code=201)
 def create_academic_year(body: AcademicYearCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     for year in db.scalars(select(AcademicYear)).all(): year.active = False
     item = AcademicYear(name=body.name.strip(), active=True); db.add(item); db.commit(); db.refresh(item); return item
+
+
+@router.put("/academic-years/{item_id}")
+def update_academic_year(item_id: int, body: AcademicYearCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(AcademicYear, item_id)
+    if not item: raise HTTPException(404, "Academic year not found")
+    item.name = body.name.strip(); db.commit(); db.refresh(item); return item
+
+
+@router.delete("/academic-years/{item_id}", status_code=204)
+def delete_academic_year(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(AcademicYear, item_id)
+    if not item: raise HTTPException(404, "Academic year not found")
+    referenced = db.scalar(select(SemesterOffering.id).where(SemesterOffering.academic_year_id == item_id).limit(1)) or db.scalar(select(FixedReservation.id).where(FixedReservation.academic_year_id == item_id).limit(1)) or db.scalar(select(GenerationRun.id).where(GenerationRun.academic_year_id == item_id).limit(1))
+    if referenced: raise HTTPException(409, "Academic year has semesters, reservations, or generation runs. Remove those records first.")
+    db.delete(item); db.commit(); return Response(status_code=204)
 
 
 @router.post("/working-week", status_code=201)
@@ -72,9 +118,25 @@ def create_working_week(body: WorkingWeekCreate, db: Session = Depends(get_db), 
     return {"created": len(days) * body.periods_per_day, "days": days}
 
 
+@router.put("/working-week")
+def update_working_week(body: WorkingWeekCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    days = [day.strip() for day in body.days if day.strip()]
+    if not days: raise HTTPException(422, "Select at least one working day")
+    if body.lunch_after_period >= body.periods_per_day: raise HTTPException(422, "Lunch period must fall within the working day")
+    if body.start_hour + body.periods_per_day > 24: raise HTTPException(422, "Working periods cannot extend past midnight")
+    db.query(TimeSlot).delete(); db.commit()
+    return create_working_week(body, db, _)
+
+
+@router.delete("/working-week", status_code=204)
+def delete_working_week(db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    db.query(TimeSlot).delete(); db.commit(); return Response(status_code=204)
+
+
 @router.get("/options")
 def options(db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     return {
+        "institutes": db.scalars(select(Institute).order_by(Institute.id)).all(),
         "academic_years": db.scalars(select(AcademicYear).where(AcademicYear.active.is_(True))).all(),
         "departments": db.scalars(select(Department)).all(),
         "faculty": db.scalars(select(Faculty).where(Faculty.active.is_(True))).all(),
@@ -99,6 +161,28 @@ def create_semester(body: SemesterCreate, db: Session = Depends(get_db), _: User
     item = SemesterOffering(**body.model_dump(), section="ALL"); db.add(item); db.commit(); db.refresh(item); return item
 
 
+@router.put("/semesters/{item_id}")
+def update_semester(item_id: int, body: SemesterCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(SemesterOffering, item_id)
+    if not item: raise HTTPException(404, "Semester configuration not found")
+    room = db.get(Room, body.home_room_id)
+    if not room or room.room_type != "theory" or room.capacity < body.strength: raise HTTPException(422, "Home classroom must be a theory room with sufficient capacity")
+    for key, value in body.model_dump().items(): setattr(item, key, value)
+    item.section = "ALL"; db.commit(); db.refresh(item); return item
+
+
+@router.delete("/semesters/{item_id}", status_code=204)
+def delete_semester(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(SemesterOffering, item_id)
+    if not item: raise HTTPException(404, "Semester configuration not found")
+    offerings = db.scalars(select(CourseOffering).where(CourseOffering.semester_offering_id == item_id)).all()
+    offering_ids = [offering.id for offering in offerings]
+    if offering_ids and db.scalar(select(TimetableSession.id).where(TimetableSession.course_offering_id.in_(offering_ids)).limit(1)):
+        raise HTTPException(409, "Semester is used by a generated timetable. Generate a new version or clear that timetable first.")
+    for offering in offerings: db.delete(offering)
+    db.delete(item); db.commit(); return Response(status_code=204)
+
+
 @router.get("/course-offerings")
 def course_offerings(semester_offering_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     items = db.scalars(select(CourseOffering).where(CourseOffering.semester_offering_id == semester_offering_id).order_by(CourseOffering.code)).all()
@@ -117,11 +201,27 @@ def create_course_offering(body: CourseOfferingCreate, db: Session = Depends(get
     item = CourseOffering(**data); db.add(item); db.commit(); db.refresh(item); return item
 
 
+@router.put("/course-offerings/{offering_id}")
+def update_course_offering(offering_id: int, body: CourseOfferingCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(CourseOffering, offering_id)
+    if not item: raise HTTPException(404, "Course offering not found")
+    semester = db.get(SemesterOffering, body.semester_offering_id)
+    if not semester: raise HTTPException(404, "Semester configuration not found")
+    missing_faculty = [x for x in body.faculty_ids if not db.get(Faculty, x)]
+    missing_rooms = [x for x in body.eligible_room_ids if not db.get(Room, x)]
+    if missing_faculty or missing_rooms: raise HTTPException(422, {"missing_faculty": missing_faculty, "missing_rooms": missing_rooms})
+    data = body.model_dump(exclude={"participant_group"}); data["participant_group_ids"] = [body.participant_group or f"SEM-{semester.semester_number}"]
+    for key, value in data.items(): setattr(item, key, value)
+    db.commit(); db.refresh(item); return item
+
+
 @router.delete("/course-offerings/{offering_id}", status_code=204)
 def delete_course_offering(offering_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     item = db.get(CourseOffering, offering_id)
     if not item: raise HTTPException(404, "Course offering not found")
-    db.delete(item); db.commit()
+    if db.scalar(select(TimetableSession.id).where(TimetableSession.course_offering_id == offering_id).limit(1)):
+        raise HTTPException(409, "Subject is used by a generated timetable and cannot be deleted.")
+    db.delete(item); db.commit(); return Response(status_code=204)
 
 
 @router.post("/validate")
