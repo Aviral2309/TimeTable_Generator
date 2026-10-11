@@ -1,3 +1,4 @@
+from collections import Counter
 from dataclasses import replace
 from app.scheduling.annealing import refine, soft_cost
 from app.scheduling.demo import build_demo_problem
@@ -19,6 +20,15 @@ def test_three_semesters_generate_and_validate():
     problem, result, metrics = solved_demo()
     assert len(result.assignments) == len(problem.sessions)
     assert metrics["scheduled_sessions"] == len(problem.sessions)
+
+
+def test_every_subject_occurs_exactly_its_configured_weekly_frequency():
+    problem, result, _ = solved_demo()
+
+    expected = Counter(session.offering_id for session in problem.sessions)
+    actual = Counter(assignment.offering_id for assignment in result.assignments)
+
+    assert actual == expected
 
 
 def test_shared_faculty_and_rooms_never_collide():
@@ -127,6 +137,31 @@ def test_distinct_lab_batches_can_run_in_parallel_without_blocking_each_other():
 
     assert result.status in {"optimal", "feasible"}
     assert {(item.day, item.start_period) for item in result.assignments} == {("Monday", 0)}
+
+
+def test_validator_rejects_full_semester_class_overlapping_a_batch_lab():
+    rooms = {
+        1: RoomResource(1, "R1", 120, "theory"),
+        2: RoomResource(2, "L1", 30, "lab"),
+    }
+    faculty = {
+        1: FacultyResource(1, "F1"),
+        2: FacultyResource(2, "F2"),
+    }
+    sessions = [
+        RequiredSession("theory", 1, 0, "EM2", "theory", 1, 120, (1,), ("SEM-5",), (1,), cohort_id="SEM-5"),
+        RequiredSession("batch", 2, 0, "EM2L", "lab", 2, 30, (2,), ("SEM-5-B1",), (2,), cohort_id="SEM-5", is_subgroup=True),
+    ]
+    problem = Problem(["Monday"], [0, 1], set(), rooms, faculty, sessions, [])
+    assignments = [
+        Assignment("theory", 1, 0, "Monday", 0, 1, 1, (1,), ("SEM-5",)),
+        Assignment("batch", 2, 0, "Monday", 0, 2, 2, (2,), ("SEM-5-B1",)),
+    ]
+
+    valid, errors, _ = validate_schedule(problem, assignments)
+
+    assert not valid
+    assert any(error["code"] == "cohort_subgroup_conflict" for error in errors)
 
 
 def test_validator_rejects_a_midday_lab_even_when_consecutive():

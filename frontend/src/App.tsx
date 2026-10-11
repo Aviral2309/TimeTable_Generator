@@ -1697,9 +1697,24 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
   const firstDay = days[0];
   const periods = data.time_slots.filter((slot: any) => slot.day === firstDay).sort((a: any, b: any) => a.period_index - b.period_index);
   const subjects = data.subjects.filter((subject: any) => subject.semester_number === semester);
+  const schemeSubjects = Array.from(subjects.reduce((grouped: Map<string, any>, subject: any) => {
+    const key = `${subject.kind}:${subject.code}:${subject.name}`;
+    const existing = grouped.get(key) || {
+      ...subject,
+      lectureHours: 0,
+      practicalHours: 0,
+    };
+    if (subject.kind === "lab") {
+      existing.practicalHours += subject.sessions_per_week * subject.duration_periods;
+    } else {
+      existing.lectureHours += subject.sessions_per_week * subject.duration_periods;
+    }
+    grouped.set(key, existing);
+    return grouped;
+  }, new Map<string, any>()).values()) as any[];
   const isCovered = (day: string, period: number) => sessions.some((s) => s.day === day && s.start_period < period && s.start_period + s.duration_periods > period);
-  const totalLecture = subjects.filter((s: any) => s.kind !== "lab").reduce((sum: number, s: any) => sum + s.sessions_per_week * s.duration_periods, 0);
-  const totalPractical = subjects.filter((s: any) => s.kind === "lab").reduce((sum: number, s: any) => sum + s.sessions_per_week * s.duration_periods, 0);
+  const totalLecture = schemeSubjects.reduce((sum: number, subject: any) => sum + subject.lectureHours, 0);
+  const totalPractical = schemeSubjects.reduce((sum: number, subject: any) => sum + subject.practicalHours, 0);
   return (
     <article className="official-sheet">
       <header className="official-header">
@@ -1719,12 +1734,20 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
               if (isCovered(day, period.period_index)) return null;
               const found = sessions.filter((s) => s.day === day && s.start_period === period.period_index);
               const span = Math.max(1, ...found.map((s) => s.duration_periods));
-              return <td key={day} rowSpan={span} className={found.some((s) => s.kind === "lab") ? "practical-cell" : ""}>{found.map((s) => <div className="official-session" key={s.id}><strong>{s.course_code}</strong>{s.participant_group_ids.some((g) => /B\d|E\d/i.test(g)) && <small>{s.participant_group_ids.join(", ")}</small>}<span>{s.faculty_codes?.length ? `(${s.faculty_codes.join(", ")})` : ""}</span><em>{s.room_code}</em></div>)}</td>;
+              return <td key={day} rowSpan={span} className={found.some((s) => s.kind === "lab") ? "practical-cell" : ""}><div className="official-session-list">{found.map((s) => <div className="official-session" key={s.id}><strong>{s.course_code}</strong>{s.participant_group_ids.some((g) => /B\d|E\d/i.test(g)) && <small>{s.participant_group_ids.map((group) => group.replace(/^SEM-\d+-/i, "")).join(", ")}</small>}<span>{s.faculty_codes?.length ? `(${s.faculty_codes.join(", ")})` : ""}</span><em>{s.room_code}</em></div>)}</div></td>;
             })}</tr>
           ))}</tbody>
         </table>
       </div>
-      <div className="official-footer"><div className="subject-key">{subjects.map((subject: any) => <div key={subject.id}><strong>{subject.code}</strong><span>{subject.name}</span></div>)}</div><table className="load-table"><thead><tr><th></th><th>L</th><th>T</th><th>P</th></tr></thead><tbody>{subjects.map((subject: any) => <tr key={subject.id}><td>{subject.code}</td><td>{subject.kind !== "lab" ? subject.sessions_per_week * subject.duration_periods : ""}</td><td></td><td>{subject.kind === "lab" ? subject.sessions_per_week * subject.duration_periods : ""}</td></tr>)}<tr><th>Total</th><th>{totalLecture}</th><th>0</th><th>{totalPractical}</th></tr></tbody></table></div>
+      <div className="official-footer">
+        <table className="scheme-table">
+          <thead><tr><th>Code</th><th>Subject scheme</th><th>L</th><th>T</th><th>P</th></tr></thead>
+          <tbody>
+            {schemeSubjects.map((subject: any) => <tr key={`${subject.kind}:${subject.code}:${subject.name}`}><td>{subject.code}</td><td>{subject.name}</td><td>{subject.lectureHours || ""}</td><td></td><td>{subject.practicalHours || ""}</td></tr>)}
+            <tr className="scheme-total"><th colSpan={2}>Total</th><th>{totalLecture}</th><th>0</th><th>{totalPractical}</th></tr>
+          </tbody>
+        </table>
+      </div>
     </article>
   );
 }

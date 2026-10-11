@@ -18,7 +18,8 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
             if r.group_id: reservation_occupancy["group"].add((r.group_id, r.day, p))
     faculty_daily = Counter()
     offering_days = Counter()
-    cohort_regular = set()
+    cohort_full = set()
+    cohort_subgroup = set()
     cohort_elective = set()
     for a in assignments:
         s = sessions.get(a.session_id)
@@ -51,7 +52,7 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
                 if (a.day, p) in problem.faculty[f].unavailable: errors.append({"code": "faculty_unavailable", "session": a.session_id, "message": f"Faculty {f} is unavailable."})
             for g in a.group_ids: occupancy["group"][g, a.day, p].append(a.session_id)
             if s.cohort_id:
-                target = cohort_elective if s.is_elective else cohort_regular
+                target = cohort_elective if s.is_elective else cohort_subgroup if s.is_subgroup else cohort_full
                 target.add((s.cohort_id, a.day, p))
     for kind, resources in occupancy.items():
         for key, ids in resources.items():
@@ -65,8 +66,12 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
     for (offering_id, day), count in offering_days.items():
         if count > 1:
             errors.append({"code": "same_subject_repeated", "offering_id": offering_id, "day": day, "message": "The same subject cannot have more than one class on the same day."})
-    for cohort_id, day, period in sorted(cohort_regular & cohort_elective):
+    for cohort_id, day, period in sorted(cohort_full & cohort_subgroup):
+        errors.append({"code": "cohort_subgroup_conflict", "cohort": cohort_id, "day": day, "period": period, "message": "A full-semester class cannot overlap one of that semester's batch labs."})
+    for cohort_id, day, period in sorted(cohort_full & cohort_elective):
         errors.append({"code": "cohort_elective_conflict", "cohort": cohort_id, "day": day, "period": period, "message": "A full-cohort class cannot overlap that cohort's elective block."})
+    for cohort_id, day, period in sorted(cohort_subgroup & cohort_elective):
+        errors.append({"code": "subgroup_elective_conflict", "cohort": cohort_id, "day": day, "period": period, "message": "A batch lab cannot overlap that semester's elective block."})
     assignment_by_session = {a.session_id: a for a in assignments}
     parallel_groups = defaultdict(list)
     for session in problem.sessions:
@@ -81,11 +86,20 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
 
 def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
     by_group_day, by_faculty_day = defaultdict(set), defaultdict(set)
+    sessions = {session.id: session for session in problem.sessions}
+    cohort_groups = defaultdict(set)
+    for session in problem.sessions:
+        if session.cohort_id and (session.is_subgroup or session.is_elective):
+            cohort_groups[session.cohort_id].update(session.group_ids)
     used_room_periods = 0
     for a in assignments:
+        session = sessions.get(a.session_id)
         for p in range(a.start_period, a.start_period + a.duration):
             used_room_periods += 1
             for g in a.group_ids: by_group_day[g, a.day].add(p)
+            if session and session.cohort_id and not session.is_subgroup and not session.is_elective:
+                for group in cohort_groups[session.cohort_id]:
+                    by_group_day[group, a.day].add(p)
             for f in a.faculty_ids: by_faculty_day[f, a.day].add(p)
     def gaps(mapping):
         total = 0
