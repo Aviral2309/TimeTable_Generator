@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+import re
 from app.core.security import require_roles
 from app.db.session import get_db
 from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, FacultyAvailability, FixedReservation, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, TimetableSession, User
@@ -11,6 +12,13 @@ from app.scheduling.preprocessing import validate_problem
 router = APIRouter(prefix="/api/setup", tags=["Semester Preparation"])
 
 TERM_SEMESTERS = {"odd": {3, 5, 7}, "even": {2, 4, 6}}
+
+
+def participant_groups_for(body: CourseOfferingCreate, semester: SemesterOffering) -> list[str]:
+    if body.kind == "elective" and body.parallel_elective:
+        code = re.sub(r"[^A-Za-z0-9]+", "-", body.code.strip()).strip("-").upper()
+        return [f"SEM-{semester.semester_number}-ELECTIVE-{code}"]
+    return [body.participant_group or f"SEM-{semester.semester_number}"]
 
 
 @router.get("/status")
@@ -218,7 +226,7 @@ def create_course_offering(body: CourseOfferingCreate, db: Session = Depends(get
     missing_rooms = [x for x in body.eligible_room_ids if not db.get(Room, x)]
     if missing_faculty or missing_rooms: raise HTTPException(422, {"missing_faculty": missing_faculty, "missing_rooms": missing_rooms})
     data = body.model_dump(exclude={"participant_group"})
-    data["participant_group_ids"] = [body.participant_group or f"SEM-{semester.semester_number}"]
+    data["participant_group_ids"] = participant_groups_for(body, semester)
     item = CourseOffering(**data); db.add(item); db.commit(); db.refresh(item); return item
 
 
@@ -282,7 +290,7 @@ def update_course_offering(offering_id: int, body: CourseOfferingCreate, db: Ses
     missing_faculty = [x for x in body.faculty_ids if not db.get(Faculty, x)]
     missing_rooms = [x for x in body.eligible_room_ids if not db.get(Room, x)]
     if missing_faculty or missing_rooms: raise HTTPException(422, {"missing_faculty": missing_faculty, "missing_rooms": missing_rooms})
-    data = body.model_dump(exclude={"participant_group"}); data["participant_group_ids"] = [body.participant_group or f"SEM-{semester.semester_number}"]
+    data = body.model_dump(exclude={"participant_group"}); data["participant_group_ids"] = participant_groups_for(body, semester)
     for key, value in data.items(): setattr(item, key, value)
     db.commit(); db.refresh(item); return item
 
@@ -311,6 +319,26 @@ def validate_configuration(semester_ids: list[int], academic_year_id: int, db: S
     for semester in semesters:
         if not db.scalar(select(CourseOffering.id).where(CourseOffering.semester_offering_id == semester.id).limit(1)):
             errors.append({"code": "missing_subjects", "message": f"Semester {semester.semester_number} has no subject offerings."})
+        parallel = db.scalars(select(CourseOffering).where(
+            CourseOffering.semester_offering_id == semester.id,
+            CourseOffering.parallel_elective.is_(True),
+        )).all()
+        by_group: dict[str, list[CourseOffering]] = {}
+        for offering in parallel:
+            by_group.setdefault(offering.elective_group or "", []).append(offering)
+        for elective_group, alternatives in by_group.items():
+            used_groups: set[str] = set()
+            duplicate_groups: set[str] = set()
+            for alternative in alternatives:
+                for participant_group in alternative.participant_group_ids or []:
+                    if participant_group in used_groups:
+                        duplicate_groups.add(participant_group)
+                    used_groups.add(participant_group)
+            if duplicate_groups:
+                errors.append({
+                    "code": "parallel_elective_group_collision",
+                    "message": f"Semester {semester.semester_number} elective group {elective_group} reuses student group(s) {', '.join(sorted(duplicate_groups))}. Each simultaneous alternative needs its own student group.",
+                })
     if not errors:
         try: errors.extend(validate_problem(build_database_problem(db, academic_year_id, semester_ids)))
         except ValueError as exc: errors.append({"code": "configuration", "message": str(exc)})

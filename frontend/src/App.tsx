@@ -1577,17 +1577,27 @@ function Generate() {
               <div className="metric-grid compact">
                 <Metric
                   label="Sessions"
-                  value={String(mutation.data.metrics.scheduled_sessions)}
+                  value={String(mutation.data.metrics?.scheduled_sessions ?? 0)}
                   detail="All cohorts"
                   icon={<BookOpen />}
                 />
                 <Metric
                   label="Student gaps"
-                  value={String(mutation.data.metrics.student_gaps)}
+                  value={String(mutation.data.metrics?.student_gaps ?? 0)}
                   detail="Minimized"
                   icon={<Clock3 />}
                 />
               </div>
+              {!mutation.data.valid && !!mutation.data.diagnostics?.length && (
+                <div className="error generation-diagnostics">
+                  <strong>Why generation stopped</strong>
+                  {mutation.data.diagnostics.map((diagnostic: any, index: number) => (
+                    <div key={`${diagnostic.code || "diagnostic"}-${index}`}>
+                      {diagnostic.message || String(diagnostic)}
+                    </div>
+                  ))}
+                </div>
+              )}
               <NavLink className="secondary button-link" to="/timetable">
                 Review timetable
               </NavLink>

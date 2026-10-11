@@ -136,3 +136,30 @@ def test_admin_creates_every_regular_lab_batch_in_one_atomic_request():
     assert [item.participant_group_ids for item in result["items"]] == [["SEM-3-B1"], ["SEM-3-B2"], ["SEM-3-B3"], ["SEM-3-B4"]]
     assert [item.enrollment for item in result["items"]] == [16, 15, 15, 15]
     assert all(item.fixed_room_id == lab.id and item.duration_periods == 2 for item in result["items"])
+
+
+def test_parallel_electives_get_distinct_student_groups_automatically():
+    db = empty_database(); actor = User(email="admin@college.edu", name="Admin", password_hash="x", role="admin")
+    department = create_department(DepartmentCreate(code="EE", name="Electrical Engineering"), db, actor)
+    year = create_academic_year(AcademicYearCreate(name="2026-27 Odd", term_type="odd"), db, actor)
+    faculty = faculty_create(FacultyCreate(faculty_code="F01", name="Teacher One", email="one@example.edu", home_department_id=department.id), db, actor)
+    room = room_create(RoomCreate(code="R1", name="Room One", department_id=department.id, capacity=80, room_type="theory"), db, actor)
+    semester = create_semester(SemesterCreate(academic_year_id=year.id, department_id=department.id, semester_number=7, strength=60), db, actor)
+    common = dict(
+        semester_offering_id=semester.id,
+        kind="elective",
+        sessions_per_week=2,
+        duration_periods=1,
+        enrollment=30,
+        faculty_ids=[faculty.id],
+        eligible_room_ids=[room.id],
+        elective_group="SEM-7-ELECTIVE",
+        parallel_elective=True,
+    )
+
+    first = create_course_offering(CourseOfferingCreate(code="EL-A", name="Elective A", **common), db, actor)
+    second = create_course_offering(CourseOfferingCreate(code="EL-B", name="Elective B", **common), db, actor)
+
+    assert first.participant_group_ids == ["SEM-7-ELECTIVE-EL-A"]
+    assert second.participant_group_ids == ["SEM-7-ELECTIVE-EL-B"]
+    assert first.participant_group_ids != second.participant_group_ids
