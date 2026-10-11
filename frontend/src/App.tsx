@@ -1541,7 +1541,7 @@ function Generate() {
               ? "Optimizing resources…"
               : check.isPending
                 ? "Cross-checking inputs…"
-                : existingTimetable.data ? "Cross-check & dynamically reschedule" : "Cross-check & generate"}
+                : existingTimetable.data ? "Cross-check & regenerate all" : "Cross-check & generate"}
             <Play size={17} />
           </button>
           {check.data && !check.data.valid && (
@@ -1554,7 +1554,7 @@ function Generate() {
           {mutation.error && (
             <div className="error">{errorText(mutation.error)}</div>
           )}
-          {existingTimetable.data && <p className="muted">Dynamic rescheduling creates version {existingTimetable.data.version + 1} using the latest teacher availability, reservations, rooms, subjects, and constraints. Earlier versions remain preserved.</p>}
+          {existingTimetable.data && <p className="muted">This creates a completely regenerated version {existingTimetable.data.version + 1}. For a targeted faculty or room disruption with minimum changes, use the Reschedule page.</p>}
         </div>
         <div className="card result">
           <h3>Generation result</h3>
