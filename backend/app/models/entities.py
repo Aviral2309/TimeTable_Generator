@@ -197,3 +197,22 @@ class ValidationReport(Base):
     errors: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     metrics: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
+
+class RescheduleEvent(Base):
+    __tablename__ = "reschedule_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_timetable_id: Mapped[int] = mapped_column(ForeignKey("timetables.id"), index=True)
+    result_timetable_id: Mapped[int | None] = mapped_column(ForeignKey("timetables.id"), index=True)
+    resource_type: Mapped[str] = mapped_column(String(20))
+    resource_id: Mapped[int] = mapped_column(Integer)
+    day: Mapped[str] = mapped_column(String(12))
+    start_period: Mapped[int] = mapped_column(Integer)
+    duration_periods: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(30), default="previewed")
+    affected_sessions: Mapped[int] = mapped_column(Integer, default=0)
+    moved_sessions: Mapped[int] = mapped_column(Integer, default=0)
+    diagnostics: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+

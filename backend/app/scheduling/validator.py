@@ -17,6 +17,7 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
             if r.faculty_id: reservation_occupancy["faculty"].add((r.faculty_id, r.day, p))
             if r.group_id: reservation_occupancy["group"].add((r.group_id, r.day, p))
     faculty_daily = Counter()
+    faculty_weekly = Counter()
     offering_days = Counter()
     cohort_full = set()
     cohort_subgroup = set()
@@ -27,9 +28,10 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
             errors.append({"code": "unknown_session", "session": a.session_id, "message": "Assignment references unknown session."})
             continue
         room = problem.rooms.get(a.room_id)
+        effective_room_ids = (s.fixed_room_id,) if s.fixed_room_id else s.eligible_room_ids
         offering_days[a.offering_id, a.day] += 1
         periods = range(a.start_period, a.start_period + a.duration)
-        if not room or room.capacity < s.enrollment or (s.kind == "lab" and room.kind != "lab") or not s.required_features.issubset(room.features):
+        if not room or a.room_id not in effective_room_ids or room.capacity < s.enrollment or (s.kind == "lab" and room.kind != "lab") or not s.required_features.issubset(room.features):
             errors.append({"code": "ineligible_room", "session": a.session_id, "message": "Room does not satisfy type, capacity, or equipment requirements."})
         if any(p not in problem.periods or (a.day, p) in problem.blocked_slots for p in periods):
             errors.append({"code": "invalid_period", "session": a.session_id, "message": "Session is outside valid periods or crosses a blocked slot."})
@@ -49,6 +51,7 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
             for f in a.faculty_ids:
                 occupancy["faculty"][f, a.day, p].append(a.session_id)
                 faculty_daily[f, a.day] += 1
+                faculty_weekly[f] += 1
                 if (a.day, p) in problem.faculty[f].unavailable: errors.append({"code": "faculty_unavailable", "session": a.session_id, "message": f"Faculty {f} is unavailable."})
             for g in a.group_ids: occupancy["group"][g, a.day, p].append(a.session_id)
             if s.cohort_id:
@@ -63,6 +66,20 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
                 errors.append({"code": "reservation_conflict", "resource_type": kind, "resource": key[0], "day": key[1], "period": key[2], "message": "Assignment conflicts with a fixed reservation."})
     for (f, day), load in faculty_daily.items():
         if load > problem.faculty[f].daily_limit: errors.append({"code": "faculty_daily_limit", "faculty_id": f, "day": day, "message": "Faculty daily workload limit exceeded."})
+    for faculty_id, load in faculty_weekly.items():
+        if load > problem.faculty[faculty_id].weekly_limit:
+            errors.append({"code": "faculty_weekly_limit", "faculty_id": faculty_id, "message": "Faculty weekly workload limit exceeded."})
+    for faculty_id, faculty in problem.faculty.items():
+        for day in problem.days:
+            occupied = sorted(period for (resource, occupied_day, period), ids in occupancy["faculty"].items() if resource == faculty_id and occupied_day == day and ids)
+            longest = current = 0
+            previous = None
+            for period in occupied:
+                current = current + 1 if previous is not None and period == previous + 1 else 1
+                longest = max(longest, current)
+                previous = period
+            if longest > faculty.max_consecutive:
+                errors.append({"code": "faculty_max_consecutive", "faculty_id": faculty_id, "day": day, "message": f"Faculty exceeds the maximum of {faculty.max_consecutive} consecutive periods."})
     for (offering_id, day), count in offering_days.items():
         if count > 1:
             errors.append({"code": "same_subject_repeated", "offering_id": offering_id, "day": day, "message": "The same subject cannot have more than one class on the same day."})

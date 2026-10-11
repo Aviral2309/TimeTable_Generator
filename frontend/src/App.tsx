@@ -19,6 +19,7 @@ import {
   Pencil,
   Play,
   Printer,
+  RefreshCw,
   School,
   Settings,
   ShieldCheck,
@@ -29,6 +30,7 @@ import {
 import {
   addLabBatchOfferings,
   addOffering,
+  applyReschedule,
   bootstrapAdmin,
   bootstrapStatus,
   create,
@@ -37,9 +39,12 @@ import {
   login,
   loadDemoData,
   offerings,
+  previewReschedule,
   remove,
   removeOffering,
   request,
+  RescheduleRequest,
+  rescheduleHistory,
   semesters,
   Session,
   setupCreate,
@@ -279,6 +284,7 @@ const adminNav = [
   ["Rooms & Labs", "/rooms", Building2],
   ["Reservations", "/reservations", Clock3],
   ["Generate", "/generate", Play],
+  ["Reschedule", "/reschedule", RefreshCw],
   ["Timetable", "/timetable", CalendarDays],
   ["Analytics", "/analytics", BarChart3],
 ] as const;
@@ -364,6 +370,7 @@ function Shell({ user, logout }: { user: User; logout: () => void }) {
           <Route index element={<Dashboard user={user} />} />
           <Route path="prepare" element={<Preparation />} />
           <Route path="generate" element={<Generate />} />
+          <Route path="reschedule" element={<ReschedulePage />} />
           <Route path="timetable" element={<TimetablePage />} />
           <Route path="download" element={<DownloadPage />} />
           <Route
@@ -1604,6 +1611,159 @@ function Generate() {
             </>
           )}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function ReschedulePage() {
+  const qc = useQueryClient();
+  const timetableQ = useQuery({ queryKey: ["timetable"], queryFn: timetable, retry: false });
+  const facultyQ = useQuery({ queryKey: ["faculty"], queryFn: () => list("faculty") });
+  const roomsQ = useQuery({ queryKey: ["rooms"], queryFn: () => list("rooms") });
+  const historyQ = useQuery({ queryKey: ["reschedule-history"], queryFn: rescheduleHistory });
+  const [form, setForm] = useState({
+    resource_type: "faculty" as "faculty" | "room",
+    resource_id: 0,
+    day: "Monday",
+    start_period: 0,
+    duration_periods: 1,
+    reason: "",
+  });
+  const [previewedRequest, setPreviewedRequest] = useState<RescheduleRequest | null>(null);
+  const preview = useMutation({
+    mutationFn: previewReschedule,
+    onSuccess: (_result, variables) => setPreviewedRequest(variables),
+  });
+  const apply = useMutation({
+    mutationFn: applyReschedule,
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["timetable"] }),
+        qc.invalidateQueries({ queryKey: ["reschedule-history"] }),
+        qc.invalidateQueries({ queryKey: ["analytics"] }),
+      ]);
+      setPreviewedRequest(null);
+    },
+  });
+  const data = timetableQ.data;
+  const configuredDays = DAYS.filter((day) => data?.time_slots.some((slot: any) => slot.day === day));
+  const daySlots = (data?.time_slots || [])
+    .filter((slot: any) => slot.day === form.day)
+    .sort((a: any, b: any) => a.period_index - b.period_index);
+  const resources = form.resource_type === "faculty" ? facultyQ.data?.items || [] : roomsQ.data?.items || [];
+  const requestBody = (): RescheduleRequest => ({
+    source_timetable_id: data!.id,
+    ...form,
+    time_limit_seconds: 20,
+    random_seed: 42,
+  });
+  const change = (values: Partial<typeof form>) => {
+    setForm((current) => ({ ...current, ...values }));
+    preview.reset();
+    apply.reset();
+    setPreviewedRequest(null);
+  };
+  const timeLabel = (day: string, start: number, duration: number) => {
+    const slots = (data?.time_slots || []).filter((slot: any) => slot.day === day);
+    const first = slots.find((slot: any) => slot.period_index === start);
+    const last = slots.find((slot: any) => slot.period_index === start + duration - 1);
+    return first && last ? `${first.start_time}–${last.end_time}` : `Period ${start + 1}`;
+  };
+  const plan = apply.data || preview.data;
+  const canPreview = !!data && !!form.resource_id && form.reason.trim().length >= 3;
+  return (
+    <section className="page">
+      <PageTitle eyebrow="Minimum-disruption engine" title="Dynamic rescheduling" />
+      <p className="lead">Temporarily block a teacher or room, preview the smallest valid set of timetable changes, and create a new version only after approval.</p>
+      <div className="reschedule-layout">
+        <div className="card reschedule-form">
+          <h3>Report a disruption</h3>
+          {timetableQ.error && <div className="error">Generate a timetable before using dynamic rescheduling.</div>}
+          <div className="version-banner">
+            <span>Source timetable</span>
+            <strong>{data ? `Version ${data.version} · ${data.academic_year}` : "Loading…"}</strong>
+          </div>
+          <div className="form-grid">
+            <label>
+              Unavailable resource
+              <select value={form.resource_type} onChange={(event) => change({ resource_type: event.target.value as "faculty" | "room", resource_id: 0 })}>
+                <option value="faculty">Faculty member</option>
+                <option value="room">Room / laboratory</option>
+              </select>
+            </label>
+            <label>
+              {form.resource_type === "faculty" ? "Faculty" : "Room / laboratory"}
+              <select required value={form.resource_id || ""} onChange={(event) => change({ resource_id: Number(event.target.value) })}>
+                <option value="">Select {form.resource_type}</option>
+                {resources.map((resource: any) => <option key={resource.id} value={resource.id}>
+                  {form.resource_type === "faculty" ? `${resource.faculty_code} · ${resource.name}` : `${resource.code} · ${resource.name}`}
+                </option>)}
+              </select>
+            </label>
+            <label>
+              Day
+              <select value={form.day} onChange={(event) => change({ day: event.target.value, start_period: 0 })}>
+                {configuredDays.map((day) => <option key={day}>{day}</option>)}
+              </select>
+            </label>
+            <label>
+              Starting time
+              <select value={form.start_period} onChange={(event) => change({ start_period: Number(event.target.value) })}>
+                {daySlots.filter((slot: any) => !slot.blocked).map((slot: any) => <option key={slot.period_index} value={slot.period_index}>{slot.start_time}–{slot.end_time}</option>)}
+              </select>
+            </label>
+            <label>
+              Unavailable for
+              <select value={form.duration_periods} onChange={(event) => change({ duration_periods: Number(event.target.value) })}>
+                <option value={1}>1 period</option>
+                <option value={2}>2 periods</option>
+                <option value={3}>3 periods</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            Reason
+            <textarea rows={3} placeholder="Example: University examination duty" value={form.reason} onChange={(event) => change({ reason: event.target.value })} />
+          </label>
+          <button className="primary wide" disabled={!canPreview || preview.isPending} onClick={() => preview.mutate(requestBody())}>
+            {preview.isPending ? "Finding the smallest valid change…" : "Preview rescheduling"}
+            <RefreshCw size={17} />
+          </button>
+          {preview.error && <div className="error">{errorText(preview.error)}</div>}
+        </div>
+
+        <div className="card reschedule-preview">
+          <h3>Before / after preview</h3>
+          {!plan ? <div className="empty"><CalendarClock /><p>Select a disruption to see exactly which classes must move.</p></div> : <>
+            <div className={`result-status ${plan.valid ? "success" : "failure"}`}>
+              <ShieldCheck />
+              <div><strong>{plan.valid ? "VALID ALTERNATIVE" : "NO VALID ALTERNATIVE"}</strong><span>{plan.resource_name} · {plan.affected_sessions} affected · {plan.moved_sessions} moved</span></div>
+            </div>
+            {!!plan.changes.length && <div className="change-list">
+              {plan.changes.map((item) => <article key={item.session_id} className="change-row">
+                <div><span className="semester-chip">Sem {roman(item.semester_number)}</span><strong>{item.course_code} · {item.course_name}</strong><small>{item.participant_group_ids.join(", ")}</small></div>
+                <div className="change-place before"><small>Before</small><strong>{item.before.day} · {timeLabel(item.before.day, item.before.start_period, item.before.duration_periods)}</strong><span>{item.before.room_code}</span></div>
+                <ChevronRight />
+                <div className="change-place after"><small>After</small><strong>{item.after.day} · {timeLabel(item.after.day, item.after.start_period, item.after.duration_periods)}</strong><span>{item.after.room_code}</span></div>
+              </article>)}
+            </div>}
+            {!plan.changes.length && <div className="note-panel">{plan.diagnostics[0]?.message || "No classes need to move."}</div>}
+            {!!plan.diagnostics.length && plan.status !== "no_change_needed" && !plan.valid && <div className="error generation-diagnostics"><strong>Why it cannot be applied</strong>{plan.diagnostics.map((item, index) => <div key={`${item.code}-${index}`}>{item.message || JSON.stringify(item)}</div>)}</div>}
+            {previewedRequest && preview.data?.valid && preview.data.status !== "no_change_needed" && !apply.data && <button className="primary wide" disabled={apply.isPending} onClick={() => apply.mutate(previewedRequest)}>{apply.isPending ? "Rechecking and creating version…" : `Apply as version ${preview.data.source_version + 1}`}<Check size={17} /></button>}
+            {apply.error && <div className="error">{errorText(apply.error)}</div>}
+            {apply.data && <div className="success-panel"><strong>Version {apply.data.result_version} created successfully.</strong><span>The previous timetable remains preserved in history.</span><NavLink className="secondary button-link" to="/timetable">Open new timetable</NavLink></div>}
+          </>}
+        </div>
+      </div>
+
+      <div className="card reschedule-history">
+        <h3>Rescheduling history</h3>
+        {!historyQ.data?.items.length ? <p className="muted">No dynamic changes have been applied yet.</p> : <div className="history-list">{historyQ.data.items.map((item: any) => <div key={item.id}>
+          <span className="history-version">v{item.source_version} → v{item.result_version}</span>
+          <div><strong>{item.resource_name}</strong><small>{item.day} · {timeLabel(item.day, item.start_period, item.duration_periods)} · {item.reason}</small></div>
+          <span>{item.moved_sessions} moved</span>
+        </div>)}</div>}
       </div>
     </section>
   );

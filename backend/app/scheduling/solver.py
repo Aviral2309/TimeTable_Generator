@@ -13,7 +13,13 @@ STATUS = {
 }
 
 
-def solve(problem: Problem, time_limit: float = 30, random_seed: int = 42) -> SolveResult:
+def solve(
+    problem: Problem,
+    time_limit: float = 30,
+    random_seed: int = 42,
+    baseline: list[Assignment] | None = None,
+    change_penalty: int = 0,
+) -> SolveResult:
     started = perf_counter()
     diagnostics = validate_problem(problem)
     if diagnostics:
@@ -30,6 +36,7 @@ def solve(problem: Problem, time_limit: float = 30, random_seed: int = 42) -> So
     reservation_rooms = {(r.room_id, r.day, p) for r in problem.reservations for p in r.periods if r.room_id}
     reservation_faculty = {(r.faculty_id, r.day, p) for r in problem.reservations for p in r.periods if r.faculty_id}
     reservation_groups = {(r.group_id, r.day, p) for r in problem.reservations for p in r.periods if r.group_id}
+    baseline_map = {a.session_id: (a.room_id, a.day, a.start_period) for a in (baseline or [])}
     for session in problem.sessions:
         for idx, (room_id, day, start, periods) in enumerate(candidates_for(problem, session)):
             if any((room_id, day, p) in reservation_rooms for p in periods):
@@ -57,6 +64,8 @@ def solve(problem: Problem, time_limit: float = 30, random_seed: int = 42) -> So
                 cost += problem.weights.get("preference", 3)
             cost += max(0, start - 5) * problem.weights.get("late", 1)
             if cost: penalties.append(cost * var)
+            if change_penalty and session.id in baseline_map and baseline_map[session.id] != (room_id, day, start):
+                penalties.append(change_penalty * var)
         session_vars = [v for (sid, _), v in variables.items() if sid == session.id]
         if not session_vars:
             diagnostics.append({"code": "reservation_conflict", "session": session.id, "message": f"{session.code} has no candidate after fixed reservations are applied."})
@@ -84,6 +93,27 @@ def solve(problem: Problem, time_limit: float = 30, random_seed: int = 42) -> So
                 model.add(sum(full_vars) + elective_var <= 1)
     for (faculty_id, _), pairs in by_faculty_day.items():
         model.add(sum(v * periods for v, periods in pairs) <= problem.faculty[faculty_id].daily_limit)
+    for faculty_id, faculty in problem.faculty.items():
+        window_size = faculty.max_consecutive + 1
+        for day in problem.days:
+            run: list[int] = []
+            runs: list[list[int]] = []
+            for period in problem.periods:
+                if (day, period) in problem.blocked_slots:
+                    if run: runs.append(run)
+                    run = []
+                elif not run or period == run[-1] + 1:
+                    run.append(period)
+                else:
+                    runs.append(run)
+                    run = [period]
+            if run: runs.append(run)
+            for periods in runs:
+                for index in range(len(periods) - window_size + 1):
+                    window = periods[index:index + window_size]
+                    variables_in_window = [var for period in window for var in by_faculty_slot.get((faculty_id, day, period), [])]
+                    if variables_in_window:
+                        model.add(sum(variables_in_window) <= faculty.max_consecutive)
     for (_, _), vs in by_offering_day.items():
         if len(vs) > 1:
             model.add(sum(vs) <= 1)

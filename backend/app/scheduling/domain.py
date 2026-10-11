@@ -36,6 +36,7 @@ class FacultyResource:
     code: str
     weekly_limit: int = 18
     daily_limit: int = 6
+    max_consecutive: int = 3
     unavailable: frozenset[tuple[str, int]] = frozenset()
     preferences: dict[tuple[str, int], int] = field(default_factory=dict)
 

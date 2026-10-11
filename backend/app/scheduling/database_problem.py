@@ -26,7 +26,7 @@ def build_database_problem(db: Session, academic_year_id: int, semester_ids: lis
         if not a.available: unavailable.setdefault(a.faculty_id, set()).add((a.day, a.period_index))
         if a.preference: preferences.setdefault(a.faculty_id, {})[(a.day, a.period_index)] = a.preference
     db_faculty = db.scalars(select(Faculty).where(Faculty.active.is_(True))).all()
-    faculty = {f.id: FacultyResource(f.id, f.faculty_code, f.weekly_limit, f.daily_limit, frozenset(unavailable.get(f.id, set())), preferences.get(f.id, {})) for f in db_faculty}
+    faculty = {f.id: FacultyResource(f.id, f.faculty_code, f.weekly_limit, f.daily_limit, f.max_consecutive, frozenset(unavailable.get(f.id, set())), preferences.get(f.id, {})) for f in db_faculty}
     semester_map = {s.id: s for s in semesters}
     offerings = db.scalars(select(CourseOffering).where(CourseOffering.semester_offering_id.in_(semester_ids))).all()
     sessions: list[RequiredSession] = []

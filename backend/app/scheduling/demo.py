@@ -13,7 +13,17 @@ def build_demo_problem() -> Problem:
         6: RoomResource(6, "ECE-102", 45, "theory", frozenset({"projector"})),
         7: RoomResource(7, "EE-104", 25, "theory", frozenset({"projector"})),
     }
-    faculty = {i: FacultyResource(i, f"F{i:02}", 18, 6, frozenset({("Wednesday", 1)}) if i == 4 else frozenset()) for i in range(1, 16)}
+    faculty = {
+        i: FacultyResource(
+            i,
+            f"F{i:02}",
+            weekly_limit=18,
+            daily_limit=6,
+            max_consecutive=3,
+            unavailable=frozenset({("Wednesday", 1)}) if i == 4 else frozenset(),
+        )
+        for i in range(1, 16)
+    }
     sessions = []
     offering = 1
     semester_specs = [

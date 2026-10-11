@@ -35,6 +35,41 @@ export type TimetableData = {
   time_slots: any[];
   sessions: Session[];
 };
+export type RescheduleRequest = {
+  source_timetable_id: number;
+  resource_type: "faculty" | "room";
+  resource_id: number;
+  day: string;
+  start_period: number;
+  duration_periods: number;
+  reason: string;
+  time_limit_seconds: number;
+  random_seed: number;
+};
+export type ReschedulePlan = {
+  source_timetable_id: number;
+  source_version: number;
+  result_timetable_id?: number;
+  result_version?: number;
+  event_id?: number;
+  status: string;
+  valid: boolean;
+  resource_name: string;
+  affected_sessions: number;
+  moved_sessions: number;
+  changes: Array<{
+    session_id: string;
+    course_code: string;
+    course_name: string;
+    semester_number: number;
+    kind: string;
+    participant_group_ids: string[];
+    before: { day: string; start_period: number; duration_periods: number; room_id: number; room_code: string };
+    after: { day: string; start_period: number; duration_periods: number; room_id: number; room_code: string };
+  }>;
+  diagnostics: Array<{ code?: string; message?: string }>;
+  metrics: Record<string, number>;
+};
 export type SetupStatus = {
   counts: Record<string, number>;
   steps: { key: string; label: string; complete: boolean }[];
@@ -94,6 +129,18 @@ export const update = (resource: string, id: number, data: unknown) =>
 export const remove = (resource: string, id: number) =>
   request(`/${resource}/${id}`, { method: "DELETE" });
 export const timetable = () => request<TimetableData>("/timetables/latest");
+export const previewReschedule = (data: RescheduleRequest) =>
+  request<ReschedulePlan>("/rescheduling/preview", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+export const applyReschedule = (data: RescheduleRequest) =>
+  request<ReschedulePlan>("/rescheduling/apply", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+export const rescheduleHistory = () =>
+  request<{ items: any[] }>("/rescheduling/history");
 export const setupOptions = () => request<any>("/setup/options");
 export const setupStatus = () => request<SetupStatus>("/setup/status");
 export const setupCreate = (resource: string, data: unknown) =>

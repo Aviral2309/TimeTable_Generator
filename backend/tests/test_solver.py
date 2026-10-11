@@ -164,6 +164,25 @@ def test_validator_rejects_full_semester_class_overlapping_a_batch_lab():
     assert any(error["code"] == "cohort_subgroup_conflict" for error in errors)
 
 
+def test_validator_rejects_faculty_maximum_consecutive_periods():
+    rooms = {index: RoomResource(index, f"R{index}", 60, "theory") for index in range(1, 5)}
+    faculty = {1: FacultyResource(1, "F1", max_consecutive=3)}
+    sessions = [
+        RequiredSession(f"s{index}", index, 0, f"S{index}", "theory", 1, 40, (1,), (f"G{index}",), (index,))
+        for index in range(1, 5)
+    ]
+    problem = Problem(["Monday"], [0, 1, 2, 3], set(), rooms, faculty, sessions, [])
+    assignments = [
+        Assignment(f"s{index}", index, 0, "Monday", index - 1, 1, index, (1,), (f"G{index}",))
+        for index in range(1, 5)
+    ]
+
+    valid, errors, _ = validate_schedule(problem, assignments)
+
+    assert not valid
+    assert any(error["code"] == "faculty_max_consecutive" for error in errors)
+
+
 def test_validator_rejects_a_midday_lab_even_when_consecutive():
     problem, result, _ = solved_demo()
     index = next(i for i, a in enumerate(result.assignments) if a.session_id.startswith("EE504"))
