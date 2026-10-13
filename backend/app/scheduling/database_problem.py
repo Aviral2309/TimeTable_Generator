@@ -47,9 +47,24 @@ def build_database_problem(db: Session, academic_year_id: int, semester_ids: lis
         if offering.kind == "theory" and semester.home_room_policy == "hard" and semester.home_room_id:
             eligible = (semester.home_room_id,)
         preferred = frozenset({0, 1, 2}) if offering.kind == "lab" and semester.semester_number == 3 else frozenset({4, 5, 6}) if offering.kind == "lab" and semester.semester_number == 5 else frozenset()
-        for occurrence in range(offering.sessions_per_week):
-            parallel_key = f"{offering.elective_group}-{occurrence}" if offering.parallel_elective else None
-            sessions.append(RequiredSession(f"offering-{offering.id}-{occurrence+1}", offering.id, occurrence, offering.code, "lab" if offering.kind == "lab" else "theory", offering.duration_periods, offering.enrollment, tuple(offering.faculty_ids), groups, eligible, normalized_capabilities(offering.required_features), preferred, offering.fixed_day, offering.fixed_period, offering.fixed_room_id, parallel_key, cohort, offering.kind == "elective", is_subgroup))
+        if offering.kind == "lab":
+            components = [("lab", offering.sessions_per_week, offering.faculty_ids)]
+        else:
+            theory_count = offering.theory_sessions_per_week or 0
+            lecture_count = offering.lecture_sessions_per_week or 0
+            components = []
+            if theory_count:
+                components.append(("theory", theory_count, offering.theory_faculty_ids or offering.faculty_ids))
+            if lecture_count:
+                components.append(("lecture", lecture_count, offering.lecture_faculty_ids or offering.faculty_ids))
+            if not components:  # Backward compatibility for pre-migration records.
+                components = [("theory", offering.sessions_per_week, offering.faculty_ids)]
+        occurrence = 0
+        for session_type, count, component_faculty_ids in components:
+            for component_occurrence in range(count):
+                parallel_key = f"{offering.elective_group}-{session_type}-{component_occurrence}" if offering.parallel_elective else None
+                sessions.append(RequiredSession(f"offering-{offering.id}-{session_type}-{component_occurrence+1}", offering.id, occurrence, offering.code, "lab" if offering.kind == "lab" else "theory", offering.duration_periods, offering.enrollment, tuple(component_faculty_ids), groups, eligible, normalized_capabilities(offering.required_features), preferred, offering.fixed_day, offering.fixed_period, offering.fixed_room_id, parallel_key, cohort, offering.kind == "elective", is_subgroup, session_type))
+                occurrence += 1
     reservations = [ResourceReservation(r.day, tuple(range(r.start_period, r.start_period + r.duration_periods)), r.room_id, r.faculty_id, r.participant_group_id, r.description) for r in db.scalars(select(FixedReservation).where(FixedReservation.academic_year_id == academic_year_id)).all()]
-    return Problem(days, periods, blocked, rooms, faculty, sessions, reservations, {"preference": 12, "late": 4, "same_day": 8, "student_gaps": 140, "faculty_gaps": 5, "late_student_periods": 12, "isolated_student_days": 10, "student_room_changes": 35})
+    return Problem(days, periods, blocked, rooms, faculty, sessions, reservations, {"preference": 12, "late": 4, "same_day": 8, "student_gaps": 220, "faculty_gaps": 5, "late_student_periods": 10, "isolated_student_days": 160, "student_room_changes": 45})
 

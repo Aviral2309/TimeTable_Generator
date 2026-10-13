@@ -62,6 +62,7 @@ class RequiredSession:
     cohort_id: str | None = None
     is_elective: bool = False
     is_subgroup: bool = False
+    session_type: str = "theory"
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ class Assignment:
     room_id: int
     faculty_ids: tuple[int, ...]
     group_ids: tuple[str, ...]
+    session_type: str = "theory"
 
 
 @dataclass

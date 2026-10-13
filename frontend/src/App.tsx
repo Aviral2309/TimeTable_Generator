@@ -823,9 +823,7 @@ function Preparation() {
                       </div>
                       <div className="offering-meta">
                         <span>
-                          <Clock3 /> {o.sessions_per_week} ×{" "}
-                          {o.duration_periods} period
-                          {o.duration_periods > 1 ? "s" : ""}
+                          <Clock3 /> {o.kind === "lab" ? `${o.sessions_per_week} lab session${o.sessions_per_week > 1 ? "s" : ""}` : `${o.theory_sessions_per_week || 0} theory + ${o.lecture_sessions_per_week || 0} lecture/tutorial`}
                         </span>
                         <span>
                           <Users /> {o.enrollment} students
@@ -1225,6 +1223,10 @@ function SubjectForm({
   const firstFacultyId = options.faculty[0]?.id;
   const [form, setForm] = useState<any>(initial ? {
     ...initial,
+    theory_sessions_per_week: initial.kind === "lab" ? 0 : (initial.theory_sessions_per_week || initial.sessions_per_week || 0),
+    lecture_sessions_per_week: initial.lecture_sessions_per_week || 0,
+    theory_faculty_ids: initial.theory_faculty_ids?.length ? initial.theory_faculty_ids : initial.faculty_ids,
+    lecture_faculty_ids: initial.lecture_faculty_ids || [],
     participant_group: initial.participant_group_ids?.[0] || null,
   } : {
     semester_offering_id: semesterId,
@@ -1232,9 +1234,13 @@ function SubjectForm({
     name: "",
     kind: "theory",
     sessions_per_week: 3,
+    theory_sessions_per_week: 2,
+    lecture_sessions_per_week: 1,
     duration_periods: 1,
     enrollment: 60,
     faculty_ids: firstFacultyId ? [firstFacultyId] : [],
+    theory_faculty_ids: firstFacultyId ? [firstFacultyId] : [],
+    lecture_faculty_ids: firstFacultyId ? [firstFacultyId] : [],
     eligible_room_ids: [],
     required_features: [],
     participant_group: null,
@@ -1272,10 +1278,17 @@ function SubjectForm({
   const batchInvalid = !initial && form.kind === "lab" && batchAllocations.some(
     (batch) => !batch.participant_group.trim() || !batch.faculty_ids.length,
   );
+  const componentInvalid = form.kind !== "lab" && (
+    form.theory_sessions_per_week + form.lecture_sessions_per_week < 1 ||
+    (!!form.theory_sessions_per_week && !form.theory_faculty_ids.length) ||
+    (!!form.lecture_sessions_per_week && !form.lecture_faculty_ids.length)
+  );
   const mutation = useMutation({
     mutationFn: () => {
       const payload = {
         ...form,
+        sessions_per_week: form.kind === "lab" ? form.sessions_per_week : form.theory_sessions_per_week + form.lecture_sessions_per_week,
+        faculty_ids: form.kind === "lab" ? form.faculty_ids : Array.from(new Set([...(form.theory_faculty_ids || []), ...(form.lecture_faculty_ids || [])])),
         required_features: splitCapabilities(requiredCapabilitiesText),
       };
       if (!initial && form.kind === "lab") {
@@ -1304,6 +1317,8 @@ function SubjectForm({
       ...form,
       kind,
       duration_periods: kind === "lab" ? 2 : 1,
+      theory_sessions_per_week: kind === "lab" ? 0 : (form.theory_sessions_per_week || 2),
+      lecture_sessions_per_week: kind === "lab" ? 0 : (form.lecture_sessions_per_week || 1),
       eligible_room_ids: [],
     });
   };
@@ -1313,7 +1328,7 @@ function SubjectForm({
       close={close}
       submit={() => mutation.mutate()}
       pending={mutation.isPending}
-      submitDisabled={batchInvalid}
+      submitDisabled={batchInvalid || componentInvalid}
       wide={!initial && form.kind === "lab"}
       error={mutation.error}
     >
@@ -1356,16 +1371,14 @@ function SubjectForm({
           </div>
         </fieldset>
       )}
-      <label>
-        Classes per week
-        <input
-          type="number"
-          min="1"
-          max="10"
-          value={form.sessions_per_week}
-          onChange={(e) => set("sessions_per_week", Number(e.target.value))}
-        />
-      </label>
+      {form.kind === "lab" ? <label>
+        Lab sessions per week
+        <input type="number" min="1" max="10" value={form.sessions_per_week} onChange={(e) => set("sessions_per_week", Number(e.target.value))} />
+      </label> : <div className="component-counts">
+        <label>Theory classes per week<input type="number" min="0" max="10" value={form.theory_sessions_per_week} onChange={(e) => set("theory_sessions_per_week", Number(e.target.value))} /></label>
+        <label>Lecture/tutorial classes per week<input type="number" min="0" max="10" value={form.lecture_sessions_per_week} onChange={(e) => set("lecture_sessions_per_week", Number(e.target.value))} /></label>
+        <small className="muted">Example: 2 theory + 1 lecture/tutorial. Each component may use the same or different teachers.</small>
+      </div>}
       <label>
         Duration in periods
         <input
@@ -1386,23 +1399,37 @@ function SubjectForm({
           onChange={(e) => set("enrollment", Number(e.target.value))}
         />
       </label>
-      {(form.kind !== "lab" || initial) && <>
+      {form.kind !== "lab" && <>
         <fieldset className="multi-select-field">
-          <legend>Teaching faculty · select one or more</legend>
+          <legend>Theory faculty · select one or more</legend>
           <div className="check-list">
             {options.faculty.map((f: any) => {
-              const checked = form.faculty_ids.includes(f.id);
+              const checked = form.theory_faculty_ids.includes(f.id);
               return <label className="checkbox" key={f.id}>
                 <input
                   type="checkbox"
                   checked={checked}
-                  onChange={() => set("faculty_ids", checked ? form.faculty_ids.filter((id: number) => id !== f.id) : [...form.faculty_ids, f.id])}
+                  disabled={!form.theory_sessions_per_week}
+                  onChange={() => set("theory_faculty_ids", checked ? form.theory_faculty_ids.filter((id: number) => id !== f.id) : [...form.theory_faculty_ids, f.id])}
                 />
                 {f.faculty_code} · {f.name}
               </label>;
             })}
           </div>
-          {!form.faculty_ids.length && <small className="field-error">Select at least one teacher.</small>}
+          {!!form.theory_sessions_per_week && !form.theory_faculty_ids.length && <small className="field-error">Select at least one theory teacher.</small>}
+        </fieldset>
+        <fieldset className="multi-select-field">
+          <legend>Lecture/tutorial faculty · select one or more</legend>
+          <div className="check-list">
+            {options.faculty.map((f: any) => {
+              const checked = form.lecture_faculty_ids.includes(f.id);
+              return <label className="checkbox" key={f.id}>
+                <input type="checkbox" checked={checked} disabled={!form.lecture_sessions_per_week} onChange={() => set("lecture_faculty_ids", checked ? form.lecture_faculty_ids.filter((id: number) => id !== f.id) : [...form.lecture_faculty_ids, f.id])} />
+                {f.faculty_code} · {f.name}
+              </label>;
+            })}
+          </div>
+          {!!form.lecture_sessions_per_week && !form.lecture_faculty_ids.length && <small className="field-error">Select at least one lecture/tutorial teacher.</small>}
         </fieldset>
         <fieldset className="multi-select-field">
           <legend>{form.kind === "lab" ? "Allowed laboratories" : "Allowed classrooms"} · optional</legend>
@@ -1415,6 +1442,10 @@ function SubjectForm({
           </div>
         </fieldset>
       </>}
+      {form.kind === "lab" && initial && <fieldset className="multi-select-field">
+        <legend>Lab faculty · select one or more</legend>
+        <div className="check-list">{options.faculty.map((f: any) => { const checked = form.faculty_ids.includes(f.id); return <label className="checkbox" key={f.id}><input type="checkbox" checked={checked} onChange={() => set("faculty_ids", checked ? form.faculty_ids.filter((id: number) => id !== f.id) : [...form.faculty_ids, f.id])} />{f.faculty_code} · {f.name}</label>; })}</div>
+      </fieldset>}
       {form.kind === "lab" && (
         <>
           {initial && <label>
@@ -1919,18 +1950,21 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
     const existing = grouped.get(key) || {
       ...subject,
       lectureHours: 0,
+      theoryHours: 0,
       practicalHours: 0,
     };
     if (subject.kind === "lab") {
       existing.practicalHours += subject.sessions_per_week * subject.duration_periods;
     } else {
-      existing.lectureHours += subject.sessions_per_week * subject.duration_periods;
+      existing.lectureHours += (subject.lecture_sessions_per_week || 0) * subject.duration_periods;
+      existing.theoryHours += (subject.theory_sessions_per_week || subject.sessions_per_week || 0) * subject.duration_periods;
     }
     grouped.set(key, existing);
     return grouped;
   }, new Map<string, any>()).values()) as any[];
   const isCovered = (day: string, period: number) => sessions.some((s) => s.day === day && s.start_period < period && s.start_period + s.duration_periods > period);
   const totalLecture = schemeSubjects.reduce((sum: number, subject: any) => sum + subject.lectureHours, 0);
+  const totalTheory = schemeSubjects.reduce((sum: number, subject: any) => sum + subject.theoryHours, 0);
   const totalPractical = schemeSubjects.reduce((sum: number, subject: any) => sum + subject.practicalHours, 0);
   return (
     <article className="official-sheet">
@@ -1951,7 +1985,7 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
               if (isCovered(day, period.period_index)) return null;
               const found = sessions.filter((s) => s.day === day && s.start_period === period.period_index);
               const span = Math.max(1, ...found.map((s) => s.duration_periods));
-              return <td key={day} rowSpan={span} className={found.some((s) => s.kind === "lab") ? "practical-cell" : ""}><div className="official-session-list">{found.map((s) => <div className="official-session" key={s.id}><div className="session-heading"><strong>{s.course_code}</strong><small>{s.kind === "lab" ? "LAB" : s.kind === "elective" ? "ELECTIVE" : "THEORY"}</small></div><b className="session-name">{s.course_name}</b>{s.participant_group_ids.some((g) => /B\d|E\d/i.test(g)) && <small className="session-groups">{s.participant_group_ids.map((group) => group.replace(/^SEM-\d+-/i, "")).join(", ")}</small>}<span className="session-faculty">{s.faculty_names?.length ? s.faculty_names.join(", ") : s.faculty_codes.join(", ")}</span><em>{s.room_code}{s.room_name ? ` · ${s.room_name}` : ""}</em></div>)}</div></td>;
+              return <td key={day} rowSpan={span} className={found.some((s) => s.kind === "lab") ? "practical-cell" : ""}><div className="official-session-list">{found.map((s) => <div className="official-session" key={s.id}><div className="session-heading"><strong>{s.course_code}</strong><small>{s.session_type === "lab" ? "LAB" : s.session_type === "lecture" ? "LECTURE/TUTORIAL" : s.kind === "elective" ? "ELECTIVE THEORY" : "THEORY"}</small></div><b className="session-name">{s.course_name}</b>{s.participant_group_ids.some((g) => /B\d|E\d/i.test(g)) && <small className="session-groups">{s.participant_group_ids.map((group) => group.replace(/^SEM-\d+-/i, "")).join(", ")}</small>}<span className="session-faculty">{s.faculty_names?.length ? s.faculty_names.join(", ") : s.faculty_codes.join(", ")}</span><em>{s.room_code}{s.room_name ? ` · ${s.room_name}` : ""}</em></div>)}</div></td>;
             })}</tr>
           ))}</tbody>
         </table>
@@ -1960,8 +1994,8 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
         <table className="scheme-table">
           <thead><tr><th>Code</th><th>Subject scheme</th><th>L</th><th>T</th><th>P</th></tr></thead>
           <tbody>
-            {schemeSubjects.map((subject: any) => <tr key={`${subject.kind}:${subject.code}:${subject.name}`}><td>{subject.code}</td><td>{subject.name}</td><td>{subject.lectureHours || ""}</td><td></td><td>{subject.practicalHours || ""}</td></tr>)}
-            <tr className="scheme-total"><th colSpan={2}>Total</th><th>{totalLecture}</th><th>0</th><th>{totalPractical}</th></tr>
+            {schemeSubjects.map((subject: any) => <tr key={`${subject.kind}:${subject.code}:${subject.name}`}><td>{subject.code}</td><td>{subject.name}</td><td>{subject.lectureHours || ""}</td><td>{subject.theoryHours || ""}</td><td>{subject.practicalHours || ""}</td></tr>)}
+            <tr className="scheme-total"><th colSpan={2}>Total</th><th>{totalLecture}</th><th>{totalTheory}</th><th>{totalPractical}</th></tr>
           </tbody>
         </table>
       </div>

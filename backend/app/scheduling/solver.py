@@ -142,7 +142,7 @@ def solve(
         for key, var in variables.items():
             if solver.boolean_value(var):
                 room_id, day, start, _, s = candidate_map[key]
-                assignments.append(Assignment(s.id, s.offering_id, s.occurrence, day, start, s.duration, room_id, s.faculty_ids, s.group_ids))
+                assignments.append(Assignment(s.id, s.offering_id, s.occurrence, day, start, s.duration, room_id, s.faculty_ids, s.group_ids, s.session_type))
     elif status == "infeasible":
         diagnostics.append({"code": "solver_infeasible", "message": "CP-SAT proved that no schedule satisfies all configured hard constraints."})
     elif status == "unknown":

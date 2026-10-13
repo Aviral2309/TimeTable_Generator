@@ -49,10 +49,11 @@ def _current_assignments(db: Session, table: Timetable) -> tuple[list[Assignment
         raise ReschedulingError("The selected timetable has no sessions")
     offering_ids = {row.course_offering_id for row in rows}
     offerings = db.scalars(select(CourseOffering).where(CourseOffering.id.in_(offering_ids))).all()
+    offering_map = {offering.id: offering for offering in offerings}
     semester_ids = sorted({offering.semester_offering_id for offering in offerings})
     assignments = [
         Assignment(
-            session_id=f"offering-{row.course_offering_id}-{row.occurrence + 1}",
+            session_id=f"offering-{row.course_offering_id}-{row.session_type}-{(row.occurrence - (offering_map[row.course_offering_id].theory_sessions_per_week or 0) + 1) if row.session_type == 'lecture' else row.occurrence + 1}",
             offering_id=row.course_offering_id,
             occurrence=row.occurrence,
             day=row.day,
@@ -61,6 +62,7 @@ def _current_assignments(db: Session, table: Timetable) -> tuple[list[Assignment
             room_id=row.room_id,
             faculty_ids=tuple(row.faculty_ids),
             group_ids=tuple(row.participant_group_ids),
+            session_type=row.session_type,
         )
         for row in rows
     ]
@@ -218,6 +220,7 @@ def apply_reschedule(db: Session, request: RescheduleRequest, user_id: int | Non
             day=assignment.day,
             start_period=assignment.start_period,
             duration_periods=assignment.duration,
+            session_type=assignment.session_type,
             room_id=assignment.room_id,
             faculty_ids=list(assignment.faculty_ids),
             participant_group_ids=list(assignment.group_ids),

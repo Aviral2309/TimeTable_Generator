@@ -48,9 +48,13 @@ class CourseOfferingCreate(BaseModel):
     name: str
     kind: str = Field(pattern="^(theory|lab|elective)$")
     sessions_per_week: int = Field(ge=1, le=10)
+    theory_sessions_per_week: int = Field(0, ge=0, le=10)
+    lecture_sessions_per_week: int = Field(0, ge=0, le=10)
     duration_periods: int = Field(ge=1, le=4)
     enrollment: int = Field(gt=0, le=500)
     faculty_ids: list[int] = Field(min_length=1)
+    theory_faculty_ids: list[int] = []
+    lecture_faculty_ids: list[int] = []
     eligible_room_ids: list[int] = []
     required_features: list[str] = []
     participant_group: str | None = None
@@ -69,6 +73,18 @@ class CourseOfferingCreate(BaseModel):
     def validate_kind(self):
         if self.kind == "lab" and self.duration_periods != 2:
             raise ValueError("Laboratories must occupy exactly two consecutive periods")
+        if self.kind != "lab":
+            if self.theory_sessions_per_week == 0 and self.lecture_sessions_per_week == 0:
+                self.theory_sessions_per_week = self.sessions_per_week
+                self.theory_faculty_ids = list(self.faculty_ids)
+            if self.theory_sessions_per_week and not self.theory_faculty_ids:
+                raise ValueError("Select faculty for the theory classes")
+            if self.lecture_sessions_per_week and not self.lecture_faculty_ids:
+                raise ValueError("Select faculty for the lecture/tutorial classes")
+            self.sessions_per_week = self.theory_sessions_per_week + self.lecture_sessions_per_week
+            self.faculty_ids = list(dict.fromkeys(self.theory_faculty_ids + self.lecture_faculty_ids))
+            if self.sessions_per_week < 1 or self.sessions_per_week > 10:
+                raise ValueError("The total theory and lecture/tutorial classes must be between 1 and 10")
         if self.parallel_elective and not self.elective_group:
             raise ValueError("Parallel electives require an elective group")
         return self

@@ -12,6 +12,7 @@ export type Session = {
   course_code: string;
   course_name: string;
   kind: string;
+  session_type: "theory" | "lecture" | "lab";
   semester_number: number | null;
   day: string;
   start_period: number;

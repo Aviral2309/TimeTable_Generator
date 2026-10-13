@@ -68,3 +68,23 @@ def test_room_unavailability_is_a_hard_generation_constraint():
     assert valid, errors
     assert not any(a.room_id == room.id and a.day == "Monday" and a.start_period in {0, 1} for a in result.assignments)
 
+
+def test_subject_expands_theory_and_lecture_with_separate_faculty():
+    db, year, ids = configured_problem()
+    offering = db.scalar(select(CourseOffering).where(CourseOffering.code == "EE301"))
+    faculty = db.scalars(select(Faculty).order_by(Faculty.id)).all()
+    offering.sessions_per_week = 3
+    offering.theory_sessions_per_week = 2
+    offering.lecture_sessions_per_week = 1
+    offering.theory_faculty_ids = [faculty[0].id]
+    offering.lecture_faculty_ids = [faculty[1].id]
+    offering.faculty_ids = [faculty[0].id, faculty[1].id]
+    db.commit()
+
+    problem = build_database_problem(db, year.id, ids)
+    sessions = [session for session in problem.sessions if session.offering_id == offering.id]
+
+    assert [session.session_type for session in sessions] == ["theory", "theory", "lecture"]
+    assert sessions[0].faculty_ids == (faculty[0].id,)
+    assert sessions[-1].faculty_ids == (faculty[1].id,)
+
