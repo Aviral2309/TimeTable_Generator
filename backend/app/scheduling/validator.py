@@ -105,6 +105,7 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
 
 def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
     by_group_day, by_faculty_day = defaultdict(set), defaultdict(set)
+    by_cohort_day = defaultdict(set)
     group_room_period = defaultdict(set)
     sessions = {session.id: session for session in problem.sessions}
     cohort_groups = defaultdict(set)
@@ -124,6 +125,8 @@ def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
             effective_groups.update(cohort_subgroups[session.cohort_id])
         for p in range(a.start_period, a.start_period + a.duration):
             used_room_periods += 1
+            if session and session.cohort_id:
+                by_cohort_day[session.cohort_id, a.day].add(p)
             for g in effective_groups:
                 by_group_day[g, a.day].add(p)
                 group_room_period[g, a.day, p].add(a.room_id)
@@ -137,9 +140,11 @@ def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
         return total
     available = len(problem.days) * (len(problem.periods) - len({p for _, p in problem.blocked_slots})) * max(1, len(problem.rooms))
     student_gaps = gaps(by_group_day)
+    cohort_gaps = gaps(by_cohort_day)
     faculty_gaps = gaps(by_faculty_day)
     late_student_periods = sum(sum(p >= 6 for p in periods) for periods in by_group_day.values())
     isolated_student_days = sum(len(periods) == 1 for periods in by_group_day.values())
+    cohort_single_period_days = sum(len(periods) == 1 for periods in by_cohort_day.values())
     room_changes = 0
     for (group, day), periods in by_group_day.items():
         ordered = sorted(periods)
@@ -149,5 +154,5 @@ def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
             current_rooms = group_room_period[group, day, current]
             if len(previous_rooms) == 1 and len(current_rooms) == 1 and previous_rooms != current_rooms:
                 room_changes += 1
-    return {"student_gaps": student_gaps, "faculty_gaps": faculty_gaps, "late_student_periods": late_student_periods, "isolated_student_days": isolated_student_days, "student_room_changes": room_changes, "room_utilization": round(used_room_periods / available, 4), "scheduled_sessions": len(assignments)}
+    return {"student_gaps": student_gaps, "cohort_gaps": cohort_gaps, "faculty_gaps": faculty_gaps, "late_student_periods": late_student_periods, "isolated_student_days": isolated_student_days, "cohort_single_period_days": cohort_single_period_days, "student_room_changes": room_changes, "room_utilization": round(used_room_periods / available, 4), "scheduled_sessions": len(assignments)}
 
