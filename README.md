@@ -16,15 +16,18 @@ The application now uses an admin-first workflow. A fresh installation contains 
 - Fixed resource reservations and fixed external lectures
 - Hard home rooms for ordinary theory sessions
 - Parallel electives with enrollment-sized rooms
-- Faculty availability and hard daily/weekly workload checks
+- Written faculty and room availability constraints plus hard daily/weekly/consecutive workload checks
 - Weighted preference, late-period, and same-subject/day penalties
 - Feasibility-preserving direct-move Simulated Annealing refinement
 - Independent schedule validator and quality metrics
-- Persisted generation runs, schedules, diagnostics, and validation reports
+- Immutable timetable versions, generation runs, diagnostics, validation reports, publication status, archives, and rescheduling history
 - Empty production database with an optional, explicit development-only seed script
 - Automated solver and API-service workflow tests
 - React 19 and TypeScript responsive administration interface
 - Secure role-based admin, faculty, and student workspaces
+- SGSITS-domain role accounts, admin-only master-data CRUD, faculty self-availability, and read-only student/faculty directories
+- Odd/Even term switching without deleting the other term or its timetable history
+- Minimum-disruption faculty/room rescheduling with before/after approval
 - Guided 12-step timetable preparation experience
 - Browser-based master data forms for faculty, rooms, labs, and reservations
 - Generation controls, hybrid result metrics, weekly timetable filtering, analytics, and CSV download
@@ -43,6 +46,14 @@ FastAPI routes
 SQLAlchemy models -> SQLite (local) / PostgreSQL (deployment)
                  -> Alembic migrations
 ```
+
+## Data durability and timetable backups
+
+- Academic terms, master data, availability rules, generation runs, validation reports, and every timetable session are stored transactionally in the database.
+- A generation or approved reschedule always creates a new immutable timetable version; it never edits an older version in place.
+- Administrators can mark a version `draft`, `published`, or `archived`. A published version is the achieved timetable backup for that term, while all earlier versions remain available in history.
+- Odd and Even terms use separate academic-term records and can be activated from the header without deleting either dataset.
+- SQLite is suitable for the local demonstration. PostgreSQL is the intended multi-user departmental deployment database, with scheduled encrypted database backups handled by deployment infrastructure.
 
 The optimization package does not import FastAPI or SQLAlchemy. This keeps the mathematical engine testable and allows later workers or CLI tools to call it directly.
 
@@ -108,17 +119,11 @@ Generation is locked until the administrator has entered:
 
 The API never labels `unknown` as infeasible. A timetable is persisted only after the independent validator confirms every implemented hard constraint.
 
-## Phase 2 checkpoint
+## Current checkpoint
 
-Implemented: the Phase 1 optimization foundation plus signed authentication, password hashing, backend role enforcement, master-data APIs and browser forms, a guided preparation flow, real generation integration, timetable filtering by role/group, analytics, responsive dashboards, and CSV export.
+Implemented: optimization, independent validation, role security, admin master-data management, written faculty/room availability, Odd/Even term switching, immutable timetable history, published/archived backups, role-filtered views, minimum-disruption rescheduling, analytics, print layout, and CSV export.
 
-Known limitations for the next phases:
-
-- Publication/versioning and dynamic rescheduling remain Phase 3 work.
-- Direct-move annealing is implemented; CP-SAT neighborhood repair is not yet implemented.
-- Student/faculty gap metrics are measured after solving, but full gap linearization in the CP-SAT objective is deferred to Phase 2.
-- Dynamic rescheduling, immutable publication versions, exports, and change requests are Phase 3.
-- The data model is the Phase 1 operational subset, rather than every final entity listed in the master specification.
+The next planned layer is the natural-language assistant for searching records and translating solver diagnostics into conversational explanations. It will call the existing permission-checked APIs and will not bypass scheduling validation.
 
 See [algorithm documentation](docs/ALGORITHM.md), [Phase 1 report](docs/PHASE_1.md), [Phase 2 report](docs/PHASE_2.md), and [API notes](docs/API.md).
 

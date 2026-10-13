@@ -30,6 +30,8 @@ import {
 import {
   addLabBatchOfferings,
   addOffering,
+  academicTerms,
+  activateAcademicTerm,
   applyReschedule,
   bootstrapAdmin,
   bootstrapStatus,
@@ -56,8 +58,12 @@ import {
   setupUpdate,
   setupUpdateRoot,
   facultyAvailability,
+  roomAvailability,
+  saveRoomAvailability,
   saveFacultyAvailability,
+  setTimetableStatus,
   timetable,
+  timetableHistory,
   update,
   updateOffering,
   User,
@@ -283,23 +289,47 @@ const adminNav = [
   ["Teacher Availability", "/availability", CalendarClock],
   ["Rooms & Labs", "/rooms", Building2],
   ["Reservations", "/reservations", Clock3],
+  ["User Access", "/users", ShieldCheck],
   ["Generate", "/generate", Play],
   ["Reschedule", "/reschedule", RefreshCw],
   ["Timetable", "/timetable", CalendarDays],
   ["Analytics", "/analytics", BarChart3],
 ] as const;
-const viewerNav = [
+const studentNav = [
   ["My Timetable", "/timetable", CalendarDays],
+  ["Faculty Directory", "/faculty", Users],
+  ["Rooms & Labs", "/rooms", Building2],
+  ["Download", "/download", Download],
+] as const;
+const facultyNav = [
+  ["My Timetable", "/timetable", CalendarDays],
+  ["My Availability", "/availability", CalendarClock],
+  ["Faculty Directory", "/faculty", Users],
+  ["Rooms & Labs", "/rooms", Building2],
   ["Download", "/download", Download],
 ] as const;
 function Shell({ user, logout }: { user: User; logout: () => void }) {
   const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
   const status = useQuery({
     queryKey: ["setup-status"],
     queryFn: setupStatus,
     enabled: user.role === "admin",
   });
-  const nav = user.role === "admin" ? adminNav : viewerNav;
+  const terms = useQuery({ queryKey: ["academic-terms"], queryFn: academicTerms, enabled: user.role === "admin" });
+  const activateTerm = useMutation({
+    mutationFn: activateAcademicTerm,
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["setup-status"] }),
+        qc.invalidateQueries({ queryKey: ["setup-options"] }),
+        qc.invalidateQueries({ queryKey: ["semesters"] }),
+        qc.invalidateQueries({ queryKey: ["timetable"] }),
+        qc.invalidateQueries({ queryKey: ["timetable-history"] }),
+      ]);
+    },
+  });
+  const nav = user.role === "admin" ? adminNav : user.role === "faculty" ? facultyNav : studentNav;
   return (
     <div className="app-shell">
       <aside className={open ? "open" : ""}>
@@ -350,9 +380,9 @@ function Shell({ user, logout }: { user: User; logout: () => void }) {
             <Menu />
           </button>
           <div>
-            <span className="term">
-              {status.data?.active_year?.name || "Academic setup pending"}
-            </span>
+            {user.role === "admin" && terms.data?.items.length ? <select className="term-switcher" value={status.data?.active_year?.id || ""} onChange={(event) => activateTerm.mutate(Number(event.target.value))}>
+              {terms.data.items.map((term: any) => <option value={term.id} key={term.id}>{term.name} · {term.term_type.toUpperCase()}</option>)}
+            </select> : <span className="term">{status.data?.active_year?.name || `${user.role} view`}</span>}
             <span
               className={
                 status.data?.ready_for_validation
@@ -368,29 +398,30 @@ function Shell({ user, logout }: { user: User; logout: () => void }) {
         </header>
         <Routes>
           <Route index element={<Dashboard user={user} />} />
-          <Route path="prepare" element={<Preparation />} />
-          <Route path="generate" element={<Generate />} />
-          <Route path="reschedule" element={<ReschedulePage />} />
-          <Route path="timetable" element={<TimetablePage />} />
+          <Route path="prepare" element={user.role === "admin" ? <Preparation /> : <Navigate to="/" />} />
+          <Route path="generate" element={user.role === "admin" ? <Generate /> : <Navigate to="/" />} />
+          <Route path="reschedule" element={user.role === "admin" ? <ReschedulePage /> : <Navigate to="/" />} />
+          <Route path="timetable" element={<TimetablePage user={user} />} />
           <Route path="download" element={<DownloadPage />} />
           <Route
             path="faculty"
-            element={<MasterList resource="faculty" title="Faculty" />}
+            element={<MasterList resource="faculty" title="Faculty" user={user} />}
           />
-          <Route path="availability" element={<AvailabilityPage />} />
+          <Route path="availability" element={user.role !== "student" ? <AvailabilityPage user={user} /> : <Navigate to="/" />} />
           <Route
             path="rooms"
             element={
-              <MasterList resource="rooms" title="Rooms & Laboratories" />
+              <MasterList resource="rooms" title="Rooms & Laboratories" user={user} />
             }
           />
           <Route
             path="reservations"
-            element={
-              <MasterList resource="reservations" title="Fixed Reservations" />
-            }
+            element={user.role === "admin" ?
+              <MasterList resource="reservations" title="Fixed Reservations" user={user} />
+            : <Navigate to="/" />}
           />
-          <Route path="analytics" element={<Analytics />} />
+          <Route path="users" element={user.role === "admin" ? <MasterList resource="users" title="User Access" user={user} /> : <Navigate to="/" />} />
+          <Route path="analytics" element={user.role === "admin" ? <Analytics /> : <Navigate to="/" />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
@@ -589,6 +620,7 @@ function Preparation() {
     qc.invalidateQueries({ queryKey: ["setup-status"] });
     qc.invalidateQueries({ queryKey: ["setup-options"] });
     qc.invalidateQueries({ queryKey: ["semesters"] });
+    qc.invalidateQueries({ queryKey: ["academic-terms"] });
   };
   const demo = useMutation({
     mutationFn: () => loadDemoData(demoTerm),
@@ -702,6 +734,7 @@ function Preparation() {
           ) : (
             <CompleteCard title={`${statusQ.data.active_year?.name} · ${statusQ.data.active_year?.term_type?.toUpperCase()} term`} onEdit={() => setFoundationEdit({ resource: "academic-years", item: statusQ.data?.active_year, fields: [["name", "Academic year"], ["term_type", "Academic term", "term"]] })} onDelete={() => window.confirm("Delete this academic year?") && deleteFoundation.mutate({resource:"academic-years",id:statusQ.data!.active_year!.id})} />
           )}{" "}
+          {!!statusQ.data?.counts.academic_years && <QuickForm title="Add another term" fields={[["name", "Example: 2026-27 Even"], ["term_type", "Academic term", "term"]]} submit={(data) => setupCreate("academic-years", data)} done={refresh} />}
           {!statusQ.data?.counts.time_slots ? (
             <WorkingWeekForm done={refresh} />
           ) : (
@@ -1463,7 +1496,7 @@ function SubjectForm({
 
 function Generate() {
   const qc = useQueryClient();
-  const existingTimetable = useQuery({ queryKey: ["timetable"], queryFn: timetable, retry: false });
+  const existingTimetable = useQuery({ queryKey: ["timetable"], queryFn: () => timetable(), retry: false });
   const statusQ = useQuery({
     queryKey: ["setup-status"],
     queryFn: setupStatus,
@@ -1594,6 +1627,12 @@ function Generate() {
                   detail="Minimized"
                   icon={<Clock3 />}
                 />
+                <Metric
+                  label="Room changes"
+                  value={String(mutation.data.metrics?.student_room_changes ?? 0)}
+                  detail="Between adjacent classes"
+                  icon={<Building2 />}
+                />
               </div>
               {!mutation.data.valid && !!mutation.data.diagnostics?.length && (
                 <div className="error generation-diagnostics">
@@ -1618,7 +1657,7 @@ function Generate() {
 
 function ReschedulePage() {
   const qc = useQueryClient();
-  const timetableQ = useQuery({ queryKey: ["timetable"], queryFn: timetable, retry: false });
+  const timetableQ = useQuery({ queryKey: ["timetable"], queryFn: () => timetable(), retry: false });
   const facultyQ = useQuery({ queryKey: ["faculty"], queryFn: () => list("faculty") });
   const roomsQ = useQuery({ queryKey: ["rooms"], queryFn: () => list("rooms") });
   const historyQ = useQuery({ queryKey: ["reschedule-history"], queryFn: rescheduleHistory });
@@ -1769,11 +1808,20 @@ function ReschedulePage() {
   );
 }
 
-function TimetablePage() {
+function TimetablePage({ user }: { user: User }) {
+  const qc = useQueryClient();
+  const [selectedVersion, setSelectedVersion] = useState<number | 0>(0);
+  const historyQ = useQuery({ queryKey: ["timetable-history"], queryFn: () => timetableHistory() });
   const q = useQuery({
-    queryKey: ["timetable"],
-    queryFn: timetable,
+    queryKey: ["timetable", selectedVersion],
+    queryFn: () => timetable(selectedVersion || undefined),
     retry: false,
+  });
+  const statusMutation = useMutation({
+    mutationFn: (status: "draft" | "published" | "archived") => setTimetableStatus(q.data!.id, status),
+    onSuccess: async () => {
+      await Promise.all([qc.invalidateQueries({ queryKey: ["timetable"] }), qc.invalidateQueries({ queryKey: ["timetable-history"] })]);
+    },
   });
   const [semester, setSemester] = useState<number | 0>(0);
   const semesterNumbers = useMemo(
@@ -1799,6 +1847,10 @@ function TimetablePage() {
         }
       >
         <div className="actions">
+          <select value={selectedVersion} onChange={(e) => { setSelectedVersion(Number(e.target.value)); setSemester(0); }}>
+            <option value={0}>Latest active term</option>
+            {historyQ.data?.items.map((item: any) => <option key={item.id} value={item.id}>{item.academic_year} · {item.academic_term.toUpperCase()} · v{item.version} · {item.status}</option>)}
+          </select>
           <select
             value={semester}
             onChange={(e) => setSemester(Number(e.target.value))}
@@ -1818,6 +1870,11 @@ function TimetablePage() {
             <Printer size={17} />
             Print
           </button>
+          {user.role === "admin" && q.data && <select className="status-select" value={q.data.status} disabled={statusMutation.isPending} onChange={(event) => statusMutation.mutate(event.target.value as "draft" | "published" | "archived")}>
+            <option value="draft">Draft</option>
+            <option value="published">Published / achieved backup</option>
+            <option value="archived">Archived</option>
+          </select>}
         </div>
       </PageTitle>
       {q.isLoading ? (
@@ -1825,11 +1882,11 @@ function TimetablePage() {
       ) : q.error ? (
         <EmptyState text="No generated timetable exists yet." />
       ) : (
-        <div className="official-timetables">
+        <><div className="timetable-record-banner"><span>{q.data!.academic_year} · {q.data!.academic_term.toUpperCase()} term</span><strong>Version {q.data!.version} · {q.data!.status.toUpperCase()}</strong><small>{q.data!.created_at ? new Date(q.data!.created_at!).toLocaleString() : "Stored timetable record"}</small></div><div className="official-timetables">
           {shownSemesters.map((number) => (
             <InstitutionalTimetable key={number} data={q.data!} semester={number} />
           ))}
-        </div>
+        </div></>
       )}
     </section>
   );
@@ -1894,7 +1951,7 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
               if (isCovered(day, period.period_index)) return null;
               const found = sessions.filter((s) => s.day === day && s.start_period === period.period_index);
               const span = Math.max(1, ...found.map((s) => s.duration_periods));
-              return <td key={day} rowSpan={span} className={found.some((s) => s.kind === "lab") ? "practical-cell" : ""}><div className="official-session-list">{found.map((s) => <div className="official-session" key={s.id}><strong>{s.course_code}</strong>{s.participant_group_ids.some((g) => /B\d|E\d/i.test(g)) && <small>{s.participant_group_ids.map((group) => group.replace(/^SEM-\d+-/i, "")).join(", ")}</small>}<span>{s.faculty_codes?.length ? `(${s.faculty_codes.join(", ")})` : ""}</span><em>{s.room_code}</em></div>)}</div></td>;
+              return <td key={day} rowSpan={span} className={found.some((s) => s.kind === "lab") ? "practical-cell" : ""}><div className="official-session-list">{found.map((s) => <div className="official-session" key={s.id}><div className="session-heading"><strong>{s.course_code}</strong><small>{s.kind === "lab" ? "LAB" : s.kind === "elective" ? "ELECTIVE" : "THEORY"}</small></div><b className="session-name">{s.course_name}</b>{s.participant_group_ids.some((g) => /B\d|E\d/i.test(g)) && <small className="session-groups">{s.participant_group_ids.map((group) => group.replace(/^SEM-\d+-/i, "")).join(", ")}</small>}<span className="session-faculty">{s.faculty_names?.length ? s.faculty_names.join(", ") : s.faculty_codes.join(", ")}</span><em>{s.room_code}{s.room_name ? ` · ${s.room_name}` : ""}</em></div>)}</div></td>;
             })}</tr>
           ))}</tbody>
         </table>
@@ -1912,48 +1969,57 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
   );
 }
 
-function AvailabilityPage() {
+function AvailabilityPage({ user }: { user: User }) {
   const optionsQ = useQuery({ queryKey: ["setup-options"], queryFn: setupOptions });
-  const [facultyId, setFacultyId] = useState<number | null>(null);
-  const selectedId = facultyId ?? optionsQ.data?.faculty[0]?.id ?? null;
+  const [resourceType, setResourceType] = useState<"faculty" | "room">("faculty");
+  const [chosenId, setChosenId] = useState<number | null>(null);
+  const ownFacultyId = user.role === "faculty" ? user.faculty_id || null : null;
+  const resources = resourceType === "faculty" ? optionsQ.data?.faculty || [] : optionsQ.data?.rooms || [];
+  const selectedId = ownFacultyId ?? chosenId ?? resources[0]?.id ?? null;
   const availabilityQ = useQuery({
-    queryKey: ["faculty-availability", selectedId],
-    queryFn: () => facultyAvailability(selectedId!),
+    queryKey: [resourceType, "availability", selectedId],
+    queryFn: () => resourceType === "faculty" ? facultyAvailability(selectedId!) : roomAvailability(selectedId!),
     enabled: !!selectedId,
   });
-  const [unavailable, setUnavailable] = useState<Set<string>>(new Set());
+  const [constraints, setConstraints] = useState<Record<string, { available: boolean; note: string }>>({});
   useEffect(() => {
-    setUnavailable(new Set((availabilityQ.data?.items || []).filter((item: any) => !item.available).map((item: any) => `${item.day}:${item.period_index}`)));
+    setConstraints(Object.fromEntries((availabilityQ.data?.items || []).map((item: any) => [`${item.day}:${item.period_index}`, { available: item.available, note: item.note || "" }])));
   }, [availabilityQ.data]);
   const save = useMutation({
-    mutationFn: () => saveFacultyAvailability(selectedId!, Array.from(unavailable).map((key) => {
-      const [day, period] = key.split(":");
-      return { day, period_index: Number(period), available: false, preference: 0 };
-    })),
+    mutationFn: () => {
+      const payload = Object.entries(constraints).map(([key, value]) => {
+        const [day, period] = key.split(":");
+        return { day, period_index: Number(period), available: value.available, preference: 0, note: value.note };
+      });
+      return resourceType === "faculty" ? saveFacultyAvailability(selectedId!, payload) : saveRoomAvailability(selectedId!, payload.map(({ preference, ...item }) => item));
+    },
   });
   const slots = optionsQ.data?.time_slots || [];
   const periods = Array.from(new Map(slots.map((slot: any) => [slot.period_index, slot])).values()).sort((a: any, b: any) => a.period_index - b.period_index) as any[];
   const days = DAYS.filter((day) => slots.some((slot: any) => slot.day === day));
-  const toggle = (key: string) => setUnavailable((current) => {
-    const next = new Set(current);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    return next;
-  });
+  const toggle = (key: string) => setConstraints((current) => ({ ...current, [key]: current[key]?.available === false ? { available: true, note: "" } : { available: false, note: current[key]?.note || "" } }));
+  const setNote = (key: string, note: string) => setConstraints((current) => ({ ...current, [key]: { available: false, note } }));
+  const unavailableCount = Object.values(constraints).filter((item) => !item.available).length;
+  const canEdit = user.role === "admin" || (user.role === "faculty" && resourceType === "faculty" && selectedId === user.faculty_id);
   return <section className="page">
-    <PageTitle eyebrow="Manual constraints" title="Teacher availability">
-      <button className="primary" disabled={!selectedId || save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save availability"}</button>
+    <PageTitle eyebrow="Written hard constraints" title="Faculty and room availability">
+      {canEdit && <button className="primary" disabled={!selectedId || save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save availability"}</button>}
     </PageTitle>
-    <p className="lead">Use this for Electrical and other-department teachers. Checked periods are available; unchecked periods are hard constraints that the generator will never use.</p>
-    {!optionsQ.data?.faculty.length ? <EmptyState text="Add faculty before configuring availability." /> : <>
-      <div className="card availability-toolbar"><label>Teacher<select value={selectedId || ""} onChange={(event) => setFacultyId(Number(event.target.value))}>{optionsQ.data.faculty.map((faculty: any) => <option key={faculty.id} value={faculty.id}>{faculty.faculty_code} · {faculty.name} · {optionsQ.data.departments.find((department: any) => department.id === faculty.home_department_id)?.code}</option>)}</select></label><span>{unavailable.size} unavailable period{unavailable.size === 1 ? "" : "s"}</span></div>
-      <div className="card table-card availability-grid"><table><thead><tr><th>Time</th>{days.map((day) => <th key={day}>{day}</th>)}</tr></thead><tbody>{periods.map((period: any) => <tr key={period.period_index}><th>{period.start_time}–{period.end_time}</th>{days.map((day) => {const slot = slots.find((item: any) => item.day === day && item.period_index === period.period_index); const key = `${day}:${period.period_index}`; return <td key={day} className={slot?.blocked ? "blocked-slot" : unavailable.has(key) ? "unavailable-slot" : "available-slot"}>{slot?.blocked ? "Lunch" : <label className="slot-check"><input type="checkbox" checked={!unavailable.has(key)} onChange={() => toggle(key)} /><span>{unavailable.has(key) ? "Unavailable" : "Available"}</span></label>}</td>;})}</tr>)}</tbody></table></div>
+    <p className="lead">Unavailable periods are hard constraints. Add a written reason such as “department meeting” or “room occupied by another department”; the solver will never allocate that resource in those periods.</p>
+    <div className="availability-type-tabs">
+      <button className={resourceType === "faculty" ? "active" : ""} onClick={() => { setResourceType("faculty"); setChosenId(null); }}>Faculty</button>
+      {user.role === "admin" && <button className={resourceType === "room" ? "active" : ""} onClick={() => { setResourceType("room"); setChosenId(null); }}>Rooms & labs</button>}
+    </div>
+    {!resources.length ? <EmptyState text={`Add ${resourceType} records before configuring availability.`} /> : <>
+      <div className="card availability-toolbar"><label>{resourceType === "faculty" ? "Teacher" : "Room / laboratory"}<select disabled={!!ownFacultyId} value={selectedId || ""} onChange={(event) => setChosenId(Number(event.target.value))}>{resources.filter((resource: any) => !ownFacultyId || resource.id === ownFacultyId).map((resource: any) => <option key={resource.id} value={resource.id}>{resourceType === "faculty" ? `${resource.faculty_code} · ${resource.name}` : `${resource.code} · ${resource.name}`}</option>)}</select></label><span>{unavailableCount} unavailable period{unavailableCount === 1 ? "" : "s"}</span></div>
+      <div className="card table-card availability-grid"><table><thead><tr><th>Time</th>{days.map((day) => <th key={day}>{day}</th>)}</tr></thead><tbody>{periods.map((period: any) => <tr key={period.period_index}><th>{period.start_time}–{period.end_time}</th>{days.map((day) => {const slot = slots.find((item: any) => item.day === day && item.period_index === period.period_index); const key = `${day}:${period.period_index}`; const unavailable = constraints[key]?.available === false; return <td key={day} className={slot?.blocked ? "blocked-slot" : unavailable ? "unavailable-slot" : "available-slot"}>{slot?.blocked ? "Lunch" : <div className="availability-cell"><label className="slot-check"><input disabled={!canEdit} type="checkbox" checked={!unavailable} onChange={() => toggle(key)} /><span>{unavailable ? "Unavailable" : "Available"}</span></label>{unavailable && <input disabled={!canEdit} className="availability-note" placeholder="Written reason" value={constraints[key]?.note || ""} onChange={(event) => setNote(key, event.target.value)} />}</div>}</td>;})}</tr>)}</tbody></table></div>
     </>}
-    {save.isSuccess && <div className="validation-ok"><ShieldCheck />Availability saved and will be enforced during generation.</div>}
+    {save.isSuccess && <div className="validation-ok"><ShieldCheck />Availability and written reasons saved as solver constraints.</div>}
     {(optionsQ.error || availabilityQ.error || save.error) && <div className="error">{errorText(optionsQ.error || availabilityQ.error || save.error)}</div>}
   </section>;
 }
 
-function MasterList({ resource, title }: { resource: string; title: string }) {
+function MasterList({ resource, title, user }: { resource: string; title: string; user: User }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: [resource], queryFn: () => list(resource) });
   const options = useQuery({
@@ -1962,6 +2028,7 @@ function MasterList({ resource, title }: { resource: string; title: string }) {
   });
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
+  const canEdit = user.role === "admin";
   const deleting = useMutation({
     mutationFn: (id: number) => remove(resource, id),
     onSuccess: () => {
@@ -1975,7 +2042,9 @@ function MasterList({ resource, title }: { resource: string; title: string }) {
     if (window.confirm(`Delete ${label}? This cannot be undone.`)) deleting.mutate(item.id);
   };
   const prerequisite =
-    resource === "faculty"
+    resource === "users"
+      ? true
+      : resource === "faculty"
       ? options.data?.departments.length
       : resource === "rooms"
         ? options.data?.departments.length
@@ -1984,24 +2053,27 @@ function MasterList({ resource, title }: { resource: string; title: string }) {
     ? ["faculty_code", "name", "email", "home_department_id", "weekly_limit", "daily_limit", "max_consecutive"]
     : resource === "rooms"
       ? ["code", "name", "department_id", "capacity", "room_type", "features", "concurrent_capacity"]
+      : resource === "users"
+        ? ["name", "email", "role", "faculty_id", "student_group_id", "active"]
       : ["day", "start_period", "duration_periods", "room_id", "faculty_id", "participant_group_id", "description"];
   const columnLabel = (key: string) => ({home_department_id:"department code",department_id:"department code",features:"supported subjects / capabilities",concurrent_capacity:"simultaneous groups",start_period:"start period",duration_periods:"duration",room_id:"room",faculty_id:"faculty",participant_group_id:"student group"} as Record<string,string>)[key] || key.replaceAll("_", " ");
   const cellValue = (key: string, value: any) => {
     if (["home_department_id", "department_id"].includes(key)) return options.data?.departments.find((department: any) => department.id === value)?.code || "—";
     if (key === "room_id") return options.data?.rooms.find((room: any) => room.id === value)?.code || "—";
     if (key === "faculty_id") return options.data?.faculty.find((faculty: any) => faculty.id === value)?.faculty_code || "—";
+    if (key === "active") return value ? "Active" : "Inactive";
     return Array.isArray(value) ? value.join(", ") || "—" : String(value ?? "—");
   };
   return (
     <section className="page">
-      <PageTitle eyebrow="Admin master data" title={title}>
-        <button
+      <PageTitle eyebrow={canEdit ? "Admin master data" : "Read-only directory"} title={title}>
+        {canEdit && <button
           className="primary"
           disabled={!prerequisite}
           onClick={() => setAdding(true)}
         >
           Add record
-        </button>
+        </button>}
       </PageTitle>
       {!prerequisite && (
         <div className="warning">
@@ -2009,7 +2081,7 @@ function MasterList({ resource, title }: { resource: string; title: string }) {
           dropdown options.
         </div>
       )}
-      {(adding || editing) && options.data && (
+      {canEdit && (adding || editing) && options.data && (
         <CreateForm
           resource={resource}
           options={options.data}
@@ -2030,14 +2102,14 @@ function MasterList({ resource, title }: { resource: string; title: string }) {
             <thead>
               <tr>
                 {columns.map((key) => <th key={key}>{columnLabel(key)}</th>)}
-                <th>Actions</th>
+                {canEdit && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {q.data.items.map((item: any) => (
                 <tr key={item.id}>
                   {columns.map((key) => <td key={key}>{cellValue(key, item[key])}</td>)}
-                  <td><div className="record-actions"><button className="icon-button" title="Edit" onClick={() => setEditing(item)}><Pencil size={15} /></button><button className="icon-button danger" title="Delete" onClick={() => confirmDelete(item)}><Trash2 size={15} /></button></div></td>
+                  {canEdit && <td><div className="record-actions"><button className="icon-button" title="Edit" onClick={() => setEditing(item)}><Pencil size={15} /></button><button className="icon-button danger" title="Delete" onClick={() => confirmDelete(item)}><Trash2 size={15} /></button></div></td>}
                 </tr>
               ))}
             </tbody>
@@ -2060,7 +2132,7 @@ function CreateForm({
   close: () => void;
 }) {
   const qc = useQueryClient();
-  const year = options.academic_years[0];
+  const year = options.academic_years.find((item: any) => item.active) || options.academic_years[0];
   const firstDepartment = options.departments[0];
   const firstRoom = options.rooms[0];
   const defaults: any =
@@ -2084,6 +2156,16 @@ function CreateForm({
             features: [],
             concurrent_capacity: 1,
           }
+        : resource === "users"
+          ? {
+              name: "",
+              email: "",
+              password: "",
+              role: "student",
+              faculty_id: null,
+              student_group_id: "",
+              active: true,
+            }
         : {
             academic_year_id: year?.id,
             day: "Monday",
@@ -2103,7 +2185,9 @@ function CreateForm({
     mutationFn: () => {
       const payload = resource === "rooms"
         ? { ...form, features: splitCapabilities(capabilitiesText) }
-        : form;
+        : resource === "users" && initial && !form.password
+          ? { ...form, password: null }
+          : form;
       return initial ? update(resource, initial.id, payload) : create(resource, payload);
     },
     onSuccess: () => {
@@ -2158,6 +2242,14 @@ function CreateForm({
                 </option>
               ))}
             </select>
+          ) : key === "role" ? (
+            <select value={form[key]} onChange={(e) => updateField(key, e.target.value)}>
+              <option value="admin">Administrator</option>
+              <option value="faculty">Faculty</option>
+              <option value="student">Student</option>
+            </select>
+          ) : key === "active" ? (
+            <label className="checkbox"><input type="checkbox" checked={!!form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.checked })} /> Account enabled</label>
           ) : key === "academic_year_id" ? (
             <select
               value={form[key]}
@@ -2181,8 +2273,8 @@ function CreateForm({
               ))}
             </select>
           ) : key === "faculty_id" ? (
-            <select value={form[key] || ""} onChange={(e) => updateField(key, e.target.value)}>
-              <option value="">No faculty-specific block</option>
+            <select disabled={resource === "users" && form.role !== "faculty"} value={form[key] || ""} onChange={(e) => updateField(key, e.target.value)}>
+              <option value="">{resource === "users" ? "Select linked faculty" : "No faculty-specific block"}</option>
               {options.faculty.map((faculty: any) => <option key={faculty.id} value={faculty.id}>{faculty.faculty_code} · {faculty.name}</option>)}
             </select>
           ) : key === "room_type" ? (
@@ -2210,10 +2302,12 @@ function CreateForm({
             />
           ) : (
             <input
-              required={!["features", "faculty_id", "participant_group_id"].includes(key)}
+              required={!["features", "faculty_id", "participant_group_id"].includes(key) && !(resource === "users" && !!initial && key === "password")}
               type={
                 typeof form[key] === "number"
                   ? "number"
+                  : key === "password"
+                    ? "password"
                   : key === "email"
                     ? "email"
                     : "text"
@@ -2223,6 +2317,7 @@ function CreateForm({
                   ? form[key].join(", ")
                   : (form[key] ?? "")
               }
+              placeholder={key === "email" ? "name@sgsits.ac.in" : key === "student_group_id" ? "SEM-3 or SEM-3-B1" : undefined}
               onChange={(e) => updateField(key, e.target.value)}
             />
           )}

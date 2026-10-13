@@ -3,12 +3,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.auth import bootstrap_admin, bootstrap_status
-from app.api.master_data import faculty_availability, faculty_create, faculty_delete, faculty_update, replace_faculty_availability, reservation_create, reservation_delete, reservation_update, room_create, room_delete, room_update
+from app.api.master_data import faculty_availability, faculty_create, faculty_delete, faculty_update, replace_faculty_availability, replace_room_availability, reservation_create, reservation_delete, reservation_update, room_availability, room_create, room_delete, room_update
 from app.api.setup import create_academic_year, create_course_offering, create_demo_data, create_department, create_institute, create_lab_batch_offerings, create_semester, create_term_cohorts, create_working_week, delete_course_offering, delete_semester, setup_status, update_course_offering, update_semester, validate_configuration
 from app.db.session import Base
 from app.models.entities import AcademicYear, CourseOffering, Faculty, FixedReservation, SemesterOffering, User
 from app.schemas.auth import BootstrapAdminRequest
-from app.schemas.master_data import FacultyAvailabilitySlot, FacultyCreate, ReservationCreate, RoomCreate
+from app.schemas.master_data import FacultyAvailabilitySlot, FacultyCreate, ReservationCreate, RoomAvailabilitySlot, RoomCreate
 from app.schemas.setup import AcademicYearCreate, CourseOfferingCreate, DemoDataCreate, DepartmentCreate, InstituteCreate, LabBatchAllocationCreate, LabOfferingBatchCreate, SemesterCreate, TermCohortsCreate, WorkingWeekCreate
 
 
@@ -51,7 +51,7 @@ def test_admin_can_create_update_and_delete_operational_records():
     department = create_department(DepartmentCreate(code="EE", name="Electrical Engineering"), db, actor)
     year = create_academic_year(AcademicYearCreate(name="2026-27"), db, actor)
     create_working_week(WorkingWeekCreate(days=["Monday", "Tuesday"], start_hour=9, periods_per_day=6, lunch_after_period=3), db, actor)
-    faculty_body = FacultyCreate(faculty_code="F01", name="Teacher One", email="one@example.edu", home_department_id=department.id)
+    faculty_body = FacultyCreate(faculty_code="F01", name="Teacher One", email="one@sgsits.ac.in", home_department_id=department.id)
     faculty = faculty_create(faculty_body, db, actor)
     faculty = faculty_update(faculty.id, faculty_body.model_copy(update={"name": "Teacher Updated"}), db, actor)
     assert faculty.name == "Teacher Updated"
@@ -59,6 +59,9 @@ def test_admin_can_create_update_and_delete_operational_records():
     room = room_create(room_body, db, actor)
     room = room_update(room.id, room_body.model_copy(update={"name": "Room Updated"}), db, actor)
     assert room.name == "Room Updated"
+    room_constraints = replace_room_availability(room.id, [RoomAvailabilitySlot(day="Monday", period_index=2, available=False, note="Used by Civil Engineering")], db, actor)
+    assert room_constraints["items"][0].note == "Used by Civil Engineering"
+    assert room_availability(room.id, db, actor)["items"][0].available is False
     reservation_body = ReservationCreate(academic_year_id=year.id, day="Monday", start_period=0, duration_periods=1, room_id=room.id, description="Meeting")
     reservation = reservation_create(reservation_body, db, actor)
     assert reservation_update(reservation.id, reservation_body.model_copy(update={"description": "Updated meeting"}), db, actor).description == "Updated meeting"
@@ -90,8 +93,8 @@ def test_demo_data_supports_terms_electives_coteaching_and_constraints():
     assert reservation.duration_periods == 2
     external_teacher = db.query(Faculty).filter(Faculty.faculty_code == "HUM").one()
     assert faculty_availability(external_teacher.id, db, actor)["items"]
-    replaced = replace_faculty_availability(external_teacher.id, [FacultyAvailabilitySlot(day="Tuesday", period_index=2, available=False)], db, actor)
-    assert len(replaced["items"]) == 1 and replaced["items"][0].day == "Tuesday"
+    replaced = replace_faculty_availability(external_teacher.id, [FacultyAvailabilitySlot(day="Tuesday", period_index=2, available=False, note="Other-department lecture")], db, actor)
+    assert len(replaced["items"]) == 1 and replaced["items"][0].day == "Tuesday" and replaced["items"][0].note == "Other-department lecture"
     assert setup_status(db, actor)["ready_for_validation"] is True
     semester_ids = [item.id for item in db.query(SemesterOffering).all()]
     assert validate_configuration(semester_ids, year.id, db, actor)["valid"] is True
@@ -117,7 +120,7 @@ def test_admin_creates_every_regular_lab_batch_in_one_atomic_request():
     db = empty_database(); actor = User(email="admin@college.edu", name="Admin", password_hash="x", role="admin")
     department = create_department(DepartmentCreate(code="EE", name="Electrical Engineering"), db, actor)
     year = create_academic_year(AcademicYearCreate(name="2026-27 Odd", term_type="odd"), db, actor)
-    faculty = faculty_create(FacultyCreate(faculty_code="F01", name="Teacher One", email="one@example.edu", home_department_id=department.id), db, actor)
+    faculty = faculty_create(FacultyCreate(faculty_code="F01", name="Teacher One", email="one@sgsits.ac.in", home_department_id=department.id), db, actor)
     lab = room_create(RoomCreate(code="NL", name="Network Lab", department_id=department.id, capacity=20, room_type="lab", features=["Network Lab"]), db, actor)
     semester = create_semester(SemesterCreate(academic_year_id=year.id, department_id=department.id, semester_number=3, strength=61), db, actor)
     body = LabOfferingBatchCreate(
@@ -142,7 +145,7 @@ def test_parallel_electives_get_distinct_student_groups_automatically():
     db = empty_database(); actor = User(email="admin@college.edu", name="Admin", password_hash="x", role="admin")
     department = create_department(DepartmentCreate(code="EE", name="Electrical Engineering"), db, actor)
     year = create_academic_year(AcademicYearCreate(name="2026-27 Odd", term_type="odd"), db, actor)
-    faculty = faculty_create(FacultyCreate(faculty_code="F01", name="Teacher One", email="one@example.edu", home_department_id=department.id), db, actor)
+    faculty = faculty_create(FacultyCreate(faculty_code="F01", name="Teacher One", email="one@sgsits.ac.in", home_department_id=department.id), db, actor)
     room = room_create(RoomCreate(code="R1", name="Room One", department_id=department.id, capacity=80, room_type="theory"), db, actor)
     semester = create_semester(SemesterCreate(academic_year_id=year.id, department_id=department.id, semester_number=7, strength=60), db, actor)
     common = dict(

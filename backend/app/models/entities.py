@@ -136,6 +136,18 @@ class FacultyAvailability(Base):
     period_index: Mapped[int] = mapped_column(Integer)
     available: Mapped[bool] = mapped_column(Boolean, default=True)
     preference: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[str] = mapped_column(String(300), default="")
+
+
+class RoomAvailability(Base):
+    __tablename__ = "room_availability"
+    __table_args__ = (UniqueConstraint("room_id", "day", "period_index"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"))
+    day: Mapped[str] = mapped_column(String(12))
+    period_index: Mapped[int] = mapped_column(Integer)
+    available: Mapped[bool] = mapped_column(Boolean, default=True)
+    note: Mapped[str] = mapped_column(String(300), default="")
 
 
 class FixedReservation(Base):

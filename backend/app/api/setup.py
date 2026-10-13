@@ -91,10 +91,23 @@ def delete_department(item_id: int, db: Session = Depends(get_db), _: User = Dep
     db.delete(item); db.commit(); return Response(status_code=204)
 
 
+@router.get("/academic-years")
+def academic_years(db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "faculty", "student"))):
+    return {"items": db.scalars(select(AcademicYear).order_by(AcademicYear.name.desc(), AcademicYear.term_type)).all()}
+
+
 @router.post("/academic-years", status_code=201)
 def create_academic_year(body: AcademicYearCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     for year in db.scalars(select(AcademicYear)).all(): year.active = False
     item = AcademicYear(name=body.name.strip(), term_type=body.term_type, active=True); db.add(item); db.commit(); db.refresh(item); return item
+
+
+@router.post("/academic-years/{item_id}/activate")
+def activate_academic_year(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(AcademicYear, item_id)
+    if not item: raise HTTPException(404, "Academic term not found")
+    for year in db.scalars(select(AcademicYear)).all(): year.active = year.id == item_id
+    db.commit(); db.refresh(item); return item
 
 
 @router.put("/academic-years/{item_id}")
@@ -147,10 +160,10 @@ def delete_working_week(db: Session = Depends(get_db), _: User = Depends(require
 
 
 @router.get("/options")
-def options(db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+def options(db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "faculty", "student"))):
     return {
         "institutes": db.scalars(select(Institute).order_by(Institute.id)).all(),
-        "academic_years": db.scalars(select(AcademicYear).where(AcademicYear.active.is_(True))).all(),
+        "academic_years": db.scalars(select(AcademicYear).order_by(AcademicYear.name.desc(), AcademicYear.term_type)).all(),
         "departments": db.scalars(select(Department)).all(),
         "faculty": db.scalars(select(Faculty).where(Faculty.active.is_(True))).all(),
         "rooms": db.scalars(select(Room).where(Room.active.is_(True))).all(),

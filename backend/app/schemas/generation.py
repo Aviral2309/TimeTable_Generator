@@ -21,3 +21,7 @@ class GenerationResponse(BaseModel):
     metrics: dict
     refinement: dict | None = None
 
+
+class TimetableStatusRequest(BaseModel):
+    status: Literal["draft", "published", "archived"]
+

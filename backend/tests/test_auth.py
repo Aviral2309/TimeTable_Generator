@@ -8,7 +8,7 @@ from app.api.master_data import room_create
 from app.core.security import decode_token, hash_password, require_roles, verify_password
 from app.db.session import Base
 from app.models.entities import Department, Room, User
-from app.schemas.auth import LoginRequest
+from app.schemas.auth import LoginRequest, UserCreate
 from app.schemas.master_data import RoomCreate
 
 
@@ -50,4 +50,11 @@ def test_admin_can_create_room():
     admin = User(email="a@test.edu", name="Admin", password_hash="x", role="admin")
     room = room_create(RoomCreate(code="EE-X", name="New Room", department_id=department.id, capacity=55, room_type="theory", features=["projector"]), db, admin)
     assert room.id and db.query(Room).count() == 1
+
+
+def test_new_role_accounts_require_sgsits_email_domain():
+    with pytest.raises(ValueError):
+        UserCreate(name="Student", email="student@gmail.com", password="secret123", role="student", student_group_id="SEM-3")
+    account = UserCreate(name="Student", email="student@sgsits.ac.in", password="secret123", role="student", student_group_id="SEM-3")
+    assert str(account.email) == "student@sgsits.ac.in"
 

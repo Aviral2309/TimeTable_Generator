@@ -1,8 +1,8 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from app.db.session import Base
-from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, Room, SemesterOffering, TimeSlot
+from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, Room, RoomAvailability, SemesterOffering, TimeSlot
 from app.scheduling.database_problem import build_database_problem
 from app.scheduling.solver import solve
 from app.scheduling.validator import validate_schedule
@@ -50,4 +50,21 @@ def test_electives_are_parallel_and_do_not_overlap_full_cohort_class():
     elective_slots={(electives[0].day,electives[0].start_period)}
     semester_seven_regular=[a for a in result.assignments if a.offering_id==3]
     assert not elective_slots & {(a.day,a.start_period) for a in semester_seven_regular}
+
+
+def test_room_unavailability_is_a_hard_generation_constraint():
+    db, year, ids = configured_problem()
+    room = db.scalar(select(Room).where(Room.code == "R1"))
+    db.add_all([
+        RoomAvailability(room_id=room.id, day="Monday", period_index=0, available=False, note="Used by another department"),
+        RoomAvailability(room_id=room.id, day="Monday", period_index=1, available=False, note="Used by another department"),
+    ])
+    db.commit()
+
+    problem = build_database_problem(db, year.id, ids)
+    result = solve(problem, 10, 42)
+    valid, errors, _ = validate_schedule(problem, result.assignments)
+
+    assert valid, errors
+    assert not any(a.room_id == room.id and a.day == "Monday" and a.start_period in {0, 1} for a in result.assignments)
 

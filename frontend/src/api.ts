@@ -18,6 +18,7 @@ export type Session = {
   duration_periods: number;
   room_id: number;
   room_code: string;
+  room_name: string;
   faculty_ids: number[];
   faculty_names: string[];
   faculty_codes: string[];
@@ -27,6 +28,8 @@ export type TimetableData = {
   id: number;
   version: number;
   status: string;
+  created_at?: string;
+  academic_year_id: number;
   institute_name: string;
   academic_year: string;
   academic_term: "odd" | "even";
@@ -128,7 +131,14 @@ export const update = (resource: string, id: number, data: unknown) =>
   request(`/${resource}/${id}`, { method: "PUT", body: JSON.stringify(data) });
 export const remove = (resource: string, id: number) =>
   request(`/${resource}/${id}`, { method: "DELETE" });
-export const timetable = () => request<TimetableData>("/timetables/latest");
+export const timetable = (id?: number) => request<TimetableData>(id ? `/timetables/${id}` : "/timetables/latest");
+export const timetableHistory = (academicYearId?: number) =>
+  request<{ items: any[] }>(`/timetables${academicYearId ? `?academic_year_id=${academicYearId}` : ""}`);
+export const setTimetableStatus = (id: number, status: "draft" | "published" | "archived") =>
+  request<{ id: number; version: number; status: string }>(`/timetables/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
 export const previewReschedule = (data: RescheduleRequest) =>
   request<ReschedulePlan>("/rescheduling/preview", {
     method: "POST",
@@ -180,6 +190,16 @@ export const saveFacultyAvailability = (facultyId: number, slots: any[]) =>
     method: "PUT",
     body: JSON.stringify(slots),
   });
+export const roomAvailability = (roomId: number) =>
+  request<{ items: any[] }>(`/rooms/${roomId}/availability`);
+export const saveRoomAvailability = (roomId: number, slots: any[]) =>
+  request<{ items: any[] }>(`/rooms/${roomId}/availability`, {
+    method: "PUT",
+    body: JSON.stringify(slots),
+  });
+export const academicTerms = () => request<{ items: any[] }>("/setup/academic-years");
+export const activateAcademicTerm = (id: number) =>
+  request<any>(`/setup/academic-years/${id}/activate`, { method: "POST" });
 export const offerings = (semesterId: number) =>
   request<{ items: any[] }>(
     `/setup/course-offerings?semester_offering_id=${semesterId}`,

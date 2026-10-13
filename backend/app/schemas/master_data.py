@@ -22,6 +22,13 @@ class FacultyCreate(BaseModel):
     daily_limit: int = Field(6, ge=1, le=8)
     max_consecutive: int = Field(3, ge=1, le=8)
 
+    @field_validator("email")
+    @classmethod
+    def require_institute_email(cls, value: EmailStr) -> EmailStr:
+        if not str(value).lower().endswith("@sgsits.ac.in"):
+            raise ValueError("Faculty email must use the @sgsits.ac.in domain")
+        return value
+
 
 class RoomCreate(BaseModel):
     code: str
@@ -54,4 +61,12 @@ class FacultyAvailabilitySlot(BaseModel):
     period_index: int = Field(ge=0, le=11)
     available: bool = True
     preference: int = Field(0, ge=-5, le=5)
+    note: str = Field("", max_length=300)
+
+
+class RoomAvailabilitySlot(BaseModel):
+    day: str
+    period_index: int = Field(ge=0, le=11)
+    available: bool = True
+    note: str = Field("", max_length=300)
 

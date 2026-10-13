@@ -35,6 +35,8 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
             errors.append({"code": "ineligible_room", "session": a.session_id, "message": "Room does not satisfy type, capacity, or equipment requirements."})
         if any(p not in problem.periods or (a.day, p) in problem.blocked_slots for p in periods):
             errors.append({"code": "invalid_period", "session": a.session_id, "message": "Session is outside valid periods or crosses a blocked slot."})
+        if room and any((a.day, p) in room.unavailable for p in periods):
+            errors.append({"code": "room_unavailable", "session": a.session_id, "room_id": a.room_id, "message": f"Room {room.code} is unavailable during this session."})
         if s.kind == "lab":
             final_start = max(problem.periods) - s.duration + 1
             final_periods = tuple(final_start + i for i in range(s.duration))
@@ -103,20 +105,28 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
 
 def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
     by_group_day, by_faculty_day = defaultdict(set), defaultdict(set)
+    group_room_period = defaultdict(set)
     sessions = {session.id: session for session in problem.sessions}
     cohort_groups = defaultdict(set)
+    cohort_subgroups = defaultdict(set)
     for session in problem.sessions:
         if session.cohort_id and (session.is_subgroup or session.is_elective):
             cohort_groups[session.cohort_id].update(session.group_ids)
+        if session.cohort_id and session.is_subgroup:
+            cohort_subgroups[session.cohort_id].update(session.group_ids)
     used_room_periods = 0
     for a in assignments:
         session = sessions.get(a.session_id)
+        effective_groups = set(a.group_ids)
+        if session and session.cohort_id and not session.is_subgroup and not session.is_elective:
+            effective_groups.update(cohort_groups[session.cohort_id])
+        elif session and session.cohort_id and session.is_elective:
+            effective_groups.update(cohort_subgroups[session.cohort_id])
         for p in range(a.start_period, a.start_period + a.duration):
             used_room_periods += 1
-            for g in a.group_ids: by_group_day[g, a.day].add(p)
-            if session and session.cohort_id and not session.is_subgroup and not session.is_elective:
-                for group in cohort_groups[session.cohort_id]:
-                    by_group_day[group, a.day].add(p)
+            for g in effective_groups:
+                by_group_day[g, a.day].add(p)
+                group_room_period[g, a.day, p].add(a.room_id)
             for f in a.faculty_ids: by_faculty_day[f, a.day].add(p)
     def gaps(mapping):
         total = 0
@@ -130,5 +140,14 @@ def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
     faculty_gaps = gaps(by_faculty_day)
     late_student_periods = sum(sum(p >= 6 for p in periods) for periods in by_group_day.values())
     isolated_student_days = sum(len(periods) == 1 for periods in by_group_day.values())
-    return {"student_gaps": student_gaps, "faculty_gaps": faculty_gaps, "late_student_periods": late_student_periods, "isolated_student_days": isolated_student_days, "room_utilization": round(used_room_periods / available, 4), "scheduled_sessions": len(assignments)}
+    room_changes = 0
+    for (group, day), periods in by_group_day.items():
+        ordered = sorted(periods)
+        for previous, current in zip(ordered, ordered[1:]):
+            if current != previous + 1: continue
+            previous_rooms = group_room_period[group, day, previous]
+            current_rooms = group_room_period[group, day, current]
+            if len(previous_rooms) == 1 and len(current_rooms) == 1 and previous_rooms != current_rooms:
+                room_changes += 1
+    return {"student_gaps": student_gaps, "faculty_gaps": faculty_gaps, "late_student_periods": late_student_periods, "isolated_student_days": isolated_student_days, "student_room_changes": room_changes, "room_utilization": round(used_room_periods / available, 4), "scheduled_sessions": len(assignments)}
 
