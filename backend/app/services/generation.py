@@ -2,7 +2,7 @@ from dataclasses import asdict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.models.entities import GenerationRun, Timetable, TimetableSession, ValidationReport
-from app.scheduling.annealing import refine
+from app.scheduling.annealing import refine, soft_cost
 from app.scheduling.database_problem import build_database_problem
 from app.scheduling.solver import solve
 from app.scheduling.validator import validate_schedule
@@ -17,9 +17,15 @@ def generate_problem(db: Session, academic_year_id: int, mode: str, time_limit: 
     result = solve(problem, time_limit, seed)
     assignments, refinement = result.assignments, None
     if result.status in {"optimal", "feasible"} and mode == "hybrid":
-        # A deeper pass is required for cohort-wide compactness; it prevents
-        # isolated one-class days and fragmented semester grids.
-        assignments, refinement = refine(problem, assignments, 15000, seed)
+        # Multiple deterministic starts are more reliable than accepting one
+        # random local optimum for gaps and fragmented semester days.
+        candidates = [refine(problem, assignments, 7000, seed + offset) for offset in range(3)]
+        assignments, best_details = min(candidates, key=lambda item: soft_cost(problem, item[0]))
+        refinement = {
+            **best_details,
+            "strategy": "best_of_three",
+            "candidate_costs": [soft_cost(problem, candidate) for candidate, _ in candidates],
+        }
     valid, errors, metrics = validate_schedule(problem, assignments) if assignments else (False, [], {})
     diagnostics = result.diagnostics + errors
     run.status, run.objective_value, run.runtime_seconds, run.diagnostics = result.status, result.objective, result.runtime_seconds, diagnostics
