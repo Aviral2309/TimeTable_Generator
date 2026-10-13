@@ -17,7 +17,9 @@ def generate_problem(db: Session, academic_year_id: int, mode: str, time_limit: 
     result = solve(problem, time_limit, seed)
     assignments, refinement = result.assignments, None
     if result.status in {"optimal", "feasible"} and mode == "hybrid":
-        assignments, refinement = refine(problem, assignments, 5000, seed)
+        # A deeper pass is required for cohort-wide compactness; it prevents
+        # isolated one-class days and fragmented semester grids.
+        assignments, refinement = refine(problem, assignments, 15000, seed)
     valid, errors, metrics = validate_schedule(problem, assignments) if assignments else (False, [], {})
     diagnostics = result.diagnostics + errors
     run.status, run.objective_value, run.runtime_seconds, run.diagnostics = result.status, result.objective, result.runtime_seconds, diagnostics
