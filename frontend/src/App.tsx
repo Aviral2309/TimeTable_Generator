@@ -1932,11 +1932,11 @@ function TimetablePage({ user }: { user: User }) {
       ) : q.error ? (
         <EmptyState text="No generated timetable exists yet." />
       ) : (
-        <><div className="timetable-record-banner"><span>{q.data!.academic_year} · {q.data!.academic_term.toUpperCase()} term</span><strong>Version {q.data!.version} · {q.data!.status.toUpperCase()}</strong><small>{q.data!.created_at ? new Date(q.data!.created_at!).toLocaleString() : "Stored timetable record"}{user.role === "admin" ? currentBackup ? ` · Backup verified ${currentBackup.checksum.slice(0, 12)}…` : " · Legacy version (download backup unavailable)" : ""}</small></div><div className="official-timetables">
+        <><div className="timetable-record-banner"><span>{q.data!.academic_year} · {q.data!.academic_term.toUpperCase()} term</span><strong>Version {q.data!.version} · {q.data!.status.toUpperCase()}</strong><small>{q.data!.created_at ? new Date(q.data!.created_at!).toLocaleString() : "Stored timetable record"}{user.role === "admin" ? currentBackup ? ` · Backup verified ${currentBackup.checksum.slice(0, 12)}…` : " · Legacy version (download backup unavailable)" : ""}</small></div><div className={`official-timetables ${viewMode}`}>
           {viewMode === "faculty" ? (
-            activeFacultyId ? <FacultyTimetable data={q.data!} sessions={facultySessions} facultyName={facultyName} facultyCode={facultyCode} /> : <EmptyState text="Select a faculty member to view and print their timetable." />
+            activeFacultyId ? <div className="print-page"><FacultyTimetable data={q.data!} sessions={facultySessions} facultyName={facultyName} facultyCode={facultyCode} /></div> : <EmptyState text="Select a faculty member to view and print their timetable." />
           ) : shownSemesters.map((number) => (
-            <InstitutionalTimetable key={number} data={q.data!} semester={number} />
+            <div className="print-page" key={number}><InstitutionalTimetable data={q.data!} semester={number} /></div>
           ))}
         </div></>
       )}
@@ -1978,14 +1978,9 @@ function FacultyTimetable({ data, sessions, facultyName, facultyCode }: { data: 
     return items;
   }, new Map<string, Session>()).values()).sort((left, right) => (left.semester_number || 0) - (right.semester_number || 0) || left.course_code.localeCompare(right.course_code));
   return <article className="official-sheet faculty-sheet">
-    <header className="official-header">
-      <h2>{data.institute_name || "Institute Name"}</h2>
-      <h3>FACULTY TIME-TABLE</h3>
-      <strong>{facultyCode ? `${facultyCode} · ` : ""}{facultyName}</strong>
-      <div><span>{data.academic_year}</span><span>{data.academic_term.toUpperCase()} TERM</span></div>
-    </header>
     <div className="official-grid-wrap">
       <table className="official-grid faculty-grid">
+        <caption className="official-header"><div className="official-caption-content"><div className="official-title"><h2>{data.institute_name || "Institute Name"}</h2><h3>FACULTY TIME-TABLE</h3><strong>{facultyCode ? `${facultyCode} · ` : ""}{facultyName}</strong></div><div className="official-meta"><span>{data.academic_year}</span><span>{data.academic_term.toUpperCase()} TERM</span></div></div></caption>
         <thead><tr><th>Time / Day</th>{days.map((day) => <th key={day}>{day}</th>)}</tr></thead>
         <tbody>{periods.map((period: any) => period.blocked ? <tr className="lunch-row" key={period.period_index}><th>{period.start_time} to {period.end_time}</th><td colSpan={days.length}>LUNCH BREAK</td></tr> : <tr key={period.period_index}><th>{period.start_time} to {period.end_time}</th>{days.map((day) => {
           if (isCovered(day, period.period_index)) return null;
@@ -2036,15 +2031,9 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
   const totalPractical = schemeSubjects.reduce((sum: number, subject: any) => sum + subject.practicalHours, 0);
   return (
     <article className="official-sheet">
-      <header className="official-header">
-        <h2>{data.institute_name || "Institute Name"}</h2>
-        <h3>Department of {semesterInfo.department_name || "Engineering"}</h3>
-        <strong>TIME-TABLE</strong>
-        <div><span>Year {Math.ceil(semester / 2)}</span><span>{data.academic_year}</span></div>
-        <div><span>Semester {roman(semester)}</span><span>ROOM NO: {semesterInfo.home_room_code || "-"}</span></div>
-      </header>
       <div className="official-grid-wrap">
         <table className="official-grid">
+          <caption className="official-header"><div className="official-caption-content"><div className="official-title"><h2>{data.institute_name || "Institute Name"}</h2><h3>Department of {semesterInfo.department_name || "Engineering"}</h3><strong>TIME-TABLE</strong></div><div className="official-meta"><span>Year {Math.ceil(semester / 2)}</span><span>{data.academic_year}</span></div><div className="official-meta"><span>Semester {roman(semester)}</span><span>ROOM NO: {semesterInfo.home_room_code || "-"}</span></div></div></caption>
           <thead><tr><th>Time / Day</th>{days.map((day) => <th key={day}>{day}</th>)}</tr></thead>
           <tbody>{periods.map((period: any) => period.blocked ? (
             <tr className="lunch-row" key={period.period_index}><th>{period.start_time} to {period.end_time}</th><td colSpan={days.length}>LUNCH BREAK</td></tr>
