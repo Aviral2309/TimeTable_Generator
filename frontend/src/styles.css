@@ -1151,9 +1151,9 @@ th {
   aside,.content>header,.page-title,.lead,.actions,.timetable-record-banner{display:none!important}
   html,body,.app-shell,.content,.page{display:block!important;background:#fff!important;margin:0!important;padding:0!important;max-width:none!important;width:auto!important}
   .official-timetables{display:block!important;margin:0!important;padding:0!important}
-  .official-sheet{border:0!important;box-shadow:none!important;margin:0!important;padding:0!important;width:100%!important;min-height:0!important;break-after:page;page-break-after:always;break-inside:avoid;page-break-inside:avoid}
-  .official-sheet:last-child{break-after:auto;page-break-after:auto}
-  .official-header{margin-bottom:3mm}.official-header h2{font-size:11pt}.official-header h3{font-size:9pt}.official-header>strong{font-size:8pt;margin-bottom:2mm}.official-header>div{font-size:7.5pt;margin:1mm 0}
+  .official-sheet{border:0!important;box-shadow:none!important;margin:0!important;padding:0!important;width:100%!important;min-height:0!important;break-inside:avoid;page-break-inside:avoid}
+  .official-sheet+.official-sheet{break-before:page;page-break-before:always}
+  .official-header{margin-bottom:3mm;break-inside:avoid;page-break-inside:avoid}.official-header h2{font-size:11pt}.official-header h3{font-size:9pt}.official-header>strong{font-size:8pt;margin-bottom:2mm}.official-header>div{font-size:7.5pt;margin:1mm 0}
   .official-grid-wrap{overflow:visible!important}.official-grid{min-width:0!important;width:100%!important;font-size:6.5pt}.official-grid th,.official-grid td{padding:1.1mm!important}.official-grid td{height:16mm!important}.official-grid tbody th{width:22mm!important;font-size:6.5pt}.lunch-row td{height:5mm!important}
   .official-session{padding:.6mm 0!important;gap:.3mm!important}.session-heading strong{font-size:6.5pt!important}.session-heading small{font-size:4.7pt!important;padding:.2mm .7mm!important}.session-name,.official-session span,.official-session small,.official-session em{font-size:5.2pt!important;line-height:1.1!important}
   .official-footer{margin-top:3mm}.scheme-table th,.scheme-table td{padding:1mm 1.5mm!important;font-size:6.3pt!important}
