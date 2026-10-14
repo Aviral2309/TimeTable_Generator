@@ -140,6 +140,10 @@ export const setTimetableStatus = (id: number, status: "draft" | "published" | "
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
+export const timetableBackups = () =>
+  request<{ items: any[] }>("/timetable-backups");
+export const timetableBackup = (id: number) =>
+  request<any>(`/timetable-backups/${id}`);
 export const previewReschedule = (data: RescheduleRequest) =>
   request<ReschedulePlan>("/rescheduling/preview", {
     method: "POST",

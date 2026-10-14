@@ -62,6 +62,8 @@ import {
   saveRoomAvailability,
   saveFacultyAvailability,
   setTimetableStatus,
+  timetableBackup,
+  timetableBackups,
   timetable,
   timetableHistory,
   update,
@@ -383,17 +385,9 @@ function Shell({ user, logout }: { user: User; logout: () => void }) {
             {user.role === "admin" && terms.data?.items.length ? <select className="term-switcher" value={status.data?.active_year?.id || ""} onChange={(event) => activateTerm.mutate(Number(event.target.value))}>
               {terms.data.items.map((term: any) => <option value={term.id} key={term.id}>{term.name} · {term.term_type.toUpperCase()}</option>)}
             </select> : <span className="term">{status.data?.active_year?.name || `${user.role} view`}</span>}
-            <span
-              className={
-                status.data?.ready_for_validation
-                  ? "status-dot"
-                  : "status-dot pending"
-              }
-            >
-              {status.data?.ready_for_validation
-                ? "Ready to validate"
-                : "Setup in progress"}
-            </span>
+            {user.role === "admin" ? <span className={status.data?.ready_for_validation ? "status-dot" : "status-dot pending"}>
+              {status.data?.ready_for_validation ? "Ready to validate" : "Setup in progress"}
+            </span> : <span className="status-dot">{user.role === "faculty" ? "Timetable & availability access" : "Read-only timetable access"}</span>}
           </div>
         </header>
         <Routes>
@@ -488,10 +482,12 @@ function Dashboard({ user }: { user: User }) {
         />
         <div className="hero-card">
           <div>
-            <h2>Your weekly timetable</h2>
+            <h2>{user.role === "faculty" ? "Your teaching timetable" : "Your weekly class timetable"}</h2>
+            <p>{user.role === "faculty" ? "View or print your faculty-specific schedule and update your availability before generation." : "View and print your semester schedule. Student accounts cannot modify department data."}</p>
             <NavLink className="primary button-link" to="/timetable">
               Open timetable
             </NavLink>
+            {user.role === "faculty" && <NavLink className="secondary button-link" to="/availability">Update availability</NavLink>}
           </div>
           <CalendarDays size={90} />
         </div>
@@ -1842,7 +1838,11 @@ function ReschedulePage() {
 function TimetablePage({ user }: { user: User }) {
   const qc = useQueryClient();
   const [selectedVersion, setSelectedVersion] = useState<number | 0>(0);
+  const [viewMode, setViewMode] = useState<"semester" | "faculty">(user.role === "faculty" ? "faculty" : "semester");
+  const [selectedFaculty, setSelectedFaculty] = useState<number | 0>(user.faculty_id || 0);
   const historyQ = useQuery({ queryKey: ["timetable-history"], queryFn: () => timetableHistory() });
+  const optionsQ = useQuery({ queryKey: ["setup-options"], queryFn: setupOptions, enabled: user.role === "admin" });
+  const backupsQ = useQuery({ queryKey: ["timetable-backups"], queryFn: timetableBackups, enabled: user.role === "admin" });
   const q = useQuery({
     queryKey: ["timetable", selectedVersion],
     queryFn: () => timetable(selectedVersion || undefined),
@@ -1867,12 +1867,19 @@ function TimetablePage({ user }: { user: User }) {
     [q.data],
   );
   const shownSemesters = semester ? [semester] : semesterNumbers;
+  const activeFacultyId = user.role === "faculty" ? user.faculty_id || 0 : selectedFaculty;
+  const facultyName = user.role === "faculty" ? user.name : optionsQ.data?.faculty.find((item: any) => item.id === activeFacultyId)?.name || "Select faculty";
+  const facultyCode = user.role === "faculty" ? "" : optionsQ.data?.faculty.find((item: any) => item.id === activeFacultyId)?.faculty_code || "";
+  const facultySessions = (q.data?.sessions || []).filter((session) => !activeFacultyId || session.faculty_ids.includes(activeFacultyId));
+  const currentBackup = backupsQ.data?.items.find((item: any) => item.timetable_id === q.data?.id);
   return (
     <section className="page">
       <PageTitle
         eyebrow="Generated schedule"
         title={
-          semester
+          viewMode === "faculty"
+            ? `${facultyName} · faculty timetable`
+            : semester
             ? `Semester ${roman(semester)} timetable`
             : "Master timetable"
         }
@@ -1882,7 +1889,15 @@ function TimetablePage({ user }: { user: User }) {
             <option value={0}>Latest active term</option>
             {historyQ.data?.items.map((item: any) => <option key={item.id} value={item.id}>{item.academic_year} · {item.academic_term.toUpperCase()} · v{item.version} · {item.status}</option>)}
           </select>
-          <select
+          {(user.role === "admin" || user.role === "faculty") && <select value={viewMode} onChange={(event) => setViewMode(event.target.value as "semester" | "faculty")}>
+            {user.role === "admin" && <option value="semester">Semester timetables</option>}
+            <option value="faculty">Faculty timetable</option>
+          </select>}
+          {user.role === "admin" && viewMode === "faculty" && <select value={selectedFaculty} onChange={(event) => setSelectedFaculty(Number(event.target.value))}>
+            <option value={0}>Select faculty</option>
+            {optionsQ.data?.faculty.map((faculty: any) => <option key={faculty.id} value={faculty.id}>{faculty.faculty_code} · {faculty.name}</option>)}
+          </select>}
+          {viewMode === "semester" && <select
             value={semester}
             onChange={(e) => setSemester(Number(e.target.value))}
           >
@@ -1892,7 +1907,7 @@ function TimetablePage({ user }: { user: User }) {
                 Semester {roman(n)}
               </option>
             ))}
-          </select>
+          </select>}
           <button className="secondary" onClick={downloadCsv}>
             <Download size={17} />
             CSV
@@ -1901,6 +1916,10 @@ function TimetablePage({ user }: { user: User }) {
             <Printer size={17} />
             Print
           </button>
+          {user.role === "admin" && currentBackup && <button className="secondary" onClick={() => downloadTimetableBackup(currentBackup.id, q.data!.academic_year, q.data!.version)}>
+            <ShieldCheck size={17} />
+            Backup JSON
+          </button>}
           {user.role === "admin" && q.data && <select className="status-select" value={q.data.status} disabled={statusMutation.isPending} onChange={(event) => statusMutation.mutate(event.target.value as "draft" | "published" | "archived")}>
             <option value="draft">Draft</option>
             <option value="published">Published / achieved backup</option>
@@ -1913,14 +1932,26 @@ function TimetablePage({ user }: { user: User }) {
       ) : q.error ? (
         <EmptyState text="No generated timetable exists yet." />
       ) : (
-        <><div className="timetable-record-banner"><span>{q.data!.academic_year} · {q.data!.academic_term.toUpperCase()} term</span><strong>Version {q.data!.version} · {q.data!.status.toUpperCase()}</strong><small>{q.data!.created_at ? new Date(q.data!.created_at!).toLocaleString() : "Stored timetable record"}</small></div><div className="official-timetables">
-          {shownSemesters.map((number) => (
+        <><div className="timetable-record-banner"><span>{q.data!.academic_year} · {q.data!.academic_term.toUpperCase()} term</span><strong>Version {q.data!.version} · {q.data!.status.toUpperCase()}</strong><small>{q.data!.created_at ? new Date(q.data!.created_at!).toLocaleString() : "Stored timetable record"}{user.role === "admin" ? currentBackup ? ` · Backup verified ${currentBackup.checksum.slice(0, 12)}…` : " · Legacy version (download backup unavailable)" : ""}</small></div><div className="official-timetables">
+          {viewMode === "faculty" ? (
+            activeFacultyId ? <FacultyTimetable data={q.data!} sessions={facultySessions} facultyName={facultyName} facultyCode={facultyCode} /> : <EmptyState text="Select a faculty member to view and print their timetable." />
+          ) : shownSemesters.map((number) => (
             <InstitutionalTimetable key={number} data={q.data!} semester={number} />
           ))}
         </div></>
       )}
     </section>
   );
+}
+async function downloadTimetableBackup(backupId: number, academicYear: string, version: number) {
+  const data = await timetableBackup(backupId);
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${academicYear.replaceAll(" ", "-")}-timetable-v${version}-backup.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 async function downloadCsv() {
   const response = await fetch("/api/export/latest.csv", {
@@ -1937,6 +1968,41 @@ async function downloadCsv() {
   a.click();
   URL.revokeObjectURL(url);
 }
+function FacultyTimetable({ data, sessions, facultyName, facultyCode }: { data: any; sessions: Session[]; facultyName: string; facultyCode: string }) {
+  const configuredDays = new Set(data.time_slots.map((slot: any) => slot.day));
+  const days = DAYS.filter((day) => configuredDays.has(day));
+  const periods = data.time_slots.filter((slot: any) => slot.day === days[0]).sort((a: any, b: any) => a.period_index - b.period_index);
+  const isCovered = (day: string, period: number) => sessions.some((session) => session.day === day && session.start_period < period && session.start_period + session.duration_periods > period);
+  const teachingSummary = Array.from(sessions.reduce((items: Map<string, Session>, session) => {
+    items.set(`${session.semester_number}:${session.course_code}:${session.session_type}`, session);
+    return items;
+  }, new Map<string, Session>()).values()).sort((left, right) => (left.semester_number || 0) - (right.semester_number || 0) || left.course_code.localeCompare(right.course_code));
+  return <article className="official-sheet faculty-sheet">
+    <header className="official-header">
+      <h2>{data.institute_name || "Institute Name"}</h2>
+      <h3>FACULTY TIME-TABLE</h3>
+      <strong>{facultyCode ? `${facultyCode} · ` : ""}{facultyName}</strong>
+      <div><span>{data.academic_year}</span><span>{data.academic_term.toUpperCase()} TERM</span></div>
+    </header>
+    <div className="official-grid-wrap">
+      <table className="official-grid faculty-grid">
+        <thead><tr><th>Time / Day</th>{days.map((day) => <th key={day}>{day}</th>)}</tr></thead>
+        <tbody>{periods.map((period: any) => period.blocked ? <tr className="lunch-row" key={period.period_index}><th>{period.start_time} to {period.end_time}</th><td colSpan={days.length}>LUNCH BREAK</td></tr> : <tr key={period.period_index}><th>{period.start_time} to {period.end_time}</th>{days.map((day) => {
+          if (isCovered(day, period.period_index)) return null;
+          const found = sessions.filter((session) => session.day === day && session.start_period === period.period_index);
+          const span = Math.max(1, ...found.map((session) => session.duration_periods));
+          return <td key={day} rowSpan={span} className={found.some((session) => session.kind === "lab") ? "practical-cell" : ""}>{found.map((session) => <div className="official-session" key={session.id}><div className="session-heading"><strong>{session.course_code}</strong><small>{session.session_type.toUpperCase()}</small></div><b className="session-name">Semester {roman(session.semester_number || 0)} · {session.course_name}</b><em>{session.room_code}{session.room_name ? ` · ${session.room_name}` : ""}</em></div>)}</td>;
+        })}</tr>)}</tbody>
+      </table>
+    </div>
+    <div className="official-footer">
+      <table className="scheme-table faculty-summary">
+        <thead><tr><th>Semester</th><th>Code & subject</th><th>Activity</th><th>Room</th></tr></thead>
+        <tbody>{teachingSummary.map((session) => <tr key={`${session.semester_number}:${session.course_code}:${session.session_type}`}><td>{roman(session.semester_number || 0)}</td><td>{session.course_code} · {session.course_name}</td><td>{session.session_type === "lecture" ? "Lecture / Tutorial" : session.session_type}</td><td>{session.room_code}</td></tr>)}</tbody>
+      </table>
+    </div>
+  </article>;
+}
 function InstitutionalTimetable({ data, semester }: { data: any; semester: number }) {
   const sessions: Session[] = data.sessions.filter((s: Session) => s.semester_number === semester);
   const semesterInfo = data.semesters.find((s: any) => s.semester_number === semester) || {};
@@ -1946,18 +2012,20 @@ function InstitutionalTimetable({ data, semester }: { data: any; semester: numbe
   const periods = data.time_slots.filter((slot: any) => slot.day === firstDay).sort((a: any, b: any) => a.period_index - b.period_index);
   const subjects = data.subjects.filter((subject: any) => subject.semester_number === semester);
   const schemeSubjects = Array.from(subjects.reduce((grouped: Map<string, any>, subject: any) => {
-    const key = `${subject.kind}:${subject.code}:${subject.name}`;
+    const key = subject.kind === "elective" ? `elective:${subject.elective_group || "semester"}` : `${subject.kind}:${subject.code}:${subject.name}`;
     const existing = grouped.get(key) || {
       ...subject,
+      code: subject.kind === "elective" ? "ELECTIVE" : subject.code,
+      name: subject.kind === "elective" ? "Elective options" : subject.name,
       lectureHours: 0,
       theoryHours: 0,
       practicalHours: 0,
     };
     if (subject.kind === "lab") {
-      existing.practicalHours += subject.sessions_per_week * subject.duration_periods;
+      existing.practicalHours = Math.max(existing.practicalHours, subject.sessions_per_week * subject.duration_periods);
     } else {
-      existing.lectureHours += (subject.lecture_sessions_per_week || 0) * subject.duration_periods;
-      existing.theoryHours += (subject.theory_sessions_per_week || subject.sessions_per_week || 0) * subject.duration_periods;
+      existing.lectureHours = Math.max(existing.lectureHours, (subject.lecture_sessions_per_week || 0) * subject.duration_periods);
+      existing.theoryHours = Math.max(existing.theoryHours, (subject.theory_sessions_per_week || subject.sessions_per_week || 0) * subject.duration_periods);
     }
     grouped.set(key, existing);
     return grouped;

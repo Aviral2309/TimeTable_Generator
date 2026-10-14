@@ -22,6 +22,7 @@ from app.scheduling.database_problem import build_database_problem
 from app.scheduling.domain import Assignment, ResourceReservation
 from app.scheduling.solver import solve
 from app.scheduling.validator import validate_schedule
+from app.services.backups import create_timetable_backup
 
 
 CHANGE_PENALTY = 1_000_000
@@ -225,6 +226,7 @@ def apply_reschedule(db: Session, request: RescheduleRequest, user_id: int | Non
             faculty_ids=list(assignment.faculty_ids),
             participant_group_ids=list(assignment.group_ids),
         ))
+    create_timetable_backup(db, table, plan["assignments"], plan["metrics"], "automatic_reschedule")
     db.add(ValidationReport(generation_run_id=run.id, valid=True, errors=[], metrics=plan["metrics"]))
     event = RescheduleEvent(
         source_timetable_id=source.id,

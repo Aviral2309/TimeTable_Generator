@@ -6,7 +6,7 @@ import csv
 import io
 from app.core.security import require_roles
 from app.db.session import get_db
-from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, Timetable, TimetableSession, User
+from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, Timetable, TimetableBackup, TimetableSession, User
 from app.schemas.generation import GenerationRequest, GenerationResponse, TimetableStatusRequest
 from app.services.generation import generate_problem
 
@@ -58,7 +58,7 @@ def _timetable_payload(table: Timetable, db: Session, user: User):
     department_ids = {semester.department_id for semester in semesters.values()}
     departments = {d.id: d for d in db.scalars(select(Department).where(Department.id.in_(department_ids))).all()} if department_ids else {}
     time_slots = db.scalars(select(TimeSlot).order_by(TimeSlot.period_index, TimeSlot.day)).all()
-    subject_rows = [{"id": o.id, "semester_number": semesters[o.semester_offering_id].semester_number if o.semester_offering_id in semesters else None, "code": o.code, "name": o.name, "kind": o.kind, "sessions_per_week": o.sessions_per_week, "theory_sessions_per_week": o.theory_sessions_per_week, "lecture_sessions_per_week": o.lecture_sessions_per_week, "duration_periods": o.duration_periods, "faculty_names": [faculty[x].name for x in o.faculty_ids if x in faculty]} for o in offerings.values()]
+    subject_rows = [{"id": o.id, "semester_number": semesters[o.semester_offering_id].semester_number if o.semester_offering_id in semesters else None, "code": o.code, "name": o.name, "kind": o.kind, "sessions_per_week": o.sessions_per_week, "theory_sessions_per_week": o.theory_sessions_per_week, "lecture_sessions_per_week": o.lecture_sessions_per_week, "duration_periods": o.duration_periods, "elective_group": o.elective_group, "parallel_elective": o.parallel_elective, "faculty_names": [faculty[x].name for x in o.faculty_ids if x in faculty]} for o in offerings.values()]
     semester_rows = [{"id": semester.id, "semester_number": semester.semester_number, "strength": semester.strength, "department_name": departments[semester.department_id].name if semester.department_id in departments else "", "department_code": departments[semester.department_id].code if semester.department_id in departments else "", "home_room_code": (db.get(Room, semester.home_room_id).code if semester.home_room_id and db.get(Room, semester.home_room_id) else "")} for semester in semesters.values()]
     run = db.get(GenerationRun, table.generation_run_id)
     return {"id": table.id, "version": table.version, "status": table.status, "created_at": run.created_at if run else None, "institute_name": institute.name if institute else "", "academic_year_id": table.academic_year_id, "academic_year": year.name if year else "", "academic_term": year.term_type if year else "", "semesters": semester_rows, "subjects": subject_rows, "time_slots": [{"day": slot.day, "period_index": slot.period_index, "start_time": slot.start_time, "end_time": slot.end_time, "blocked": slot.blocked} for slot in time_slots], "sessions": enriched}
@@ -100,6 +100,19 @@ def timetable_status(timetable_id: int, body: TimetableStatusRequest, db: Sessio
     table.status = body.status
     db.commit(); db.refresh(table)
     return {"id": table.id, "version": table.version, "status": table.status}
+
+
+@router.get("/timetable-backups")
+def timetable_backups(db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    items = db.scalars(select(TimetableBackup).order_by(desc(TimetableBackup.id))).all()
+    return {"items": [{"id": item.id, "timetable_id": item.timetable_id, "academic_year_id": item.academic_year_id, "version": item.version, "reason": item.reason, "checksum": item.checksum, "created_at": item.created_at} for item in items]}
+
+
+@router.get("/timetable-backups/{backup_id}")
+def timetable_backup(backup_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    item = db.get(TimetableBackup, backup_id)
+    if not item: raise HTTPException(404, "Timetable backup not found")
+    return {"id": item.id, "created_at": item.created_at, "reason": item.reason, "checksum": item.checksum, "snapshot": item.snapshot}
 
 
 @router.get("/export/latest.csv")

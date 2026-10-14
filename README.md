@@ -31,6 +31,8 @@ The application now uses an admin-first workflow. A fresh installation contains 
 - Guided 12-step timetable preparation experience
 - Browser-based master data forms for faculty, rooms, labs, and reservations
 - Generation controls, hybrid result metrics, weekly timetable filtering, analytics, and CSV download
+- Portrait A4 print/PDF output with one semester per page and a dedicated faculty timetable view
+- Automatic checksummed JSON snapshot backup for every generated or rescheduled timetable version
 
 ## Architecture
 
@@ -51,7 +53,7 @@ SQLAlchemy models -> SQLite (local) / PostgreSQL (deployment)
 
 - Academic terms, master data, availability rules, generation runs, validation reports, and every timetable session are stored transactionally in the database.
 - A generation or approved reschedule always creates a new immutable timetable version; it never edits an older version in place.
-- Administrators can mark a version `draft`, `published`, or `archived`. A published version is the achieved timetable backup for that term, while all earlier versions remain available in history.
+- Administrators can mark a version `draft`, `published`, or `archived`. Every new version also receives an automatic checksummed JSON snapshot that can be downloaded from the timetable page; all earlier versions remain available in history.
 - Odd and Even terms use separate academic-term records and can be activated from the header without deleting either dataset.
 - SQLite is suitable for the local demonstration. PostgreSQL is the intended multi-user departmental deployment database, with scheduled encrypted database backups handled by deployment infrastructure.
 

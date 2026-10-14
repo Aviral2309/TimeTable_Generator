@@ -206,6 +206,18 @@ class TimetableSession(Base):
     timetable: Mapped[Timetable] = relationship(back_populates="sessions")
 
 
+class TimetableBackup(Base):
+    __tablename__ = "timetable_backups"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timetable_id: Mapped[int] = mapped_column(ForeignKey("timetables.id", ondelete="CASCADE"), unique=True, index=True)
+    academic_year_id: Mapped[int] = mapped_column(ForeignKey("academic_years.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(50), default="automatic_generation")
+    checksum: Mapped[str] = mapped_column(String(64))
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class ValidationReport(Base):
     __tablename__ = "validation_reports"
     id: Mapped[int] = mapped_column(primary_key=True)

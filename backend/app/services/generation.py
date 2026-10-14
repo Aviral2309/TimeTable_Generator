@@ -6,6 +6,7 @@ from app.scheduling.annealing import refine, soft_cost
 from app.scheduling.database_problem import build_database_problem
 from app.scheduling.solver import solve
 from app.scheduling.validator import validate_schedule
+from app.services.backups import create_timetable_backup
 
 
 def generate_problem(db: Session, academic_year_id: int, mode: str, time_limit: float, seed: int, semester_ids: list[int] | None = None) -> dict:
@@ -35,6 +36,7 @@ def generate_problem(db: Session, academic_year_id: int, mode: str, time_limit: 
         db.add(table); db.flush()
         for a in assignments:
             db.add(TimetableSession(timetable_id=table.id, course_offering_id=a.offering_id, occurrence=a.occurrence, day=a.day, start_period=a.start_period, duration_periods=a.duration, session_type=a.session_type, room_id=a.room_id, faculty_ids=list(a.faculty_ids), participant_group_ids=list(a.group_ids)))
+        create_timetable_backup(db, table, assignments, metrics)
     db.add(ValidationReport(generation_run_id=run.id, valid=valid, errors=errors, metrics=metrics))
     db.commit()
     return {"run_id": run.id, "status": result.status, "objective_value": result.objective, "runtime_seconds": result.runtime_seconds, "valid": valid, "assignments": [asdict(a) for a in assignments], "diagnostics": diagnostics, "metrics": metrics, "refinement": refinement}
