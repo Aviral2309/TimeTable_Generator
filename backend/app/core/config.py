@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Intelligent Academic Timetable API"
+    app_name: str = "SGSITS Academic Timetable API"
     database_url: str = "sqlite:///./timetable.db"
     secret_key: str = "development-only-change-me"
     cors_origins: str = "http://localhost:5173"

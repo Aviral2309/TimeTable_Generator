@@ -156,7 +156,7 @@ function FirstAdmin({ onLogin, hasDepartmentData }: { onLogin: (u: User) => void
   });
   return (
     <AuthLayout
-      eyebrow="First-time setup"
+      eyebrow="SGSITS · Department handover"
       title="Create the department administrator"
       text={hasDepartmentData
         ? "The department's starter records are ready. Create a private administrator account, then review and complete only the missing data."
@@ -222,9 +222,9 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
   ];
   return (
     <AuthLayout
-      eyebrow="Academic operations"
-      title="Intelligent timetable planning, without the conflicts."
-      text="Choose your workspace first. Your account is securely checked before the matching tools are opened."
+      eyebrow="SGSITS · Electrical Engineering"
+      title="Academic timetable planning for the department."
+      text="Choose your workspace to view, prepare or manage the official departmental timetable."
     >
       {!role ? <div className="role-login">
         <p className="eyebrow">Welcome</p>
@@ -289,7 +289,7 @@ function AuthLayout({
     <main className="login-page">
       <section className="login-brand">
         <div className="brand-mark">
-          <GraduationCap />
+          <img src="/sgsits-logo.png" alt="SGSITS Indore emblem" />
         </div>
         <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
@@ -297,6 +297,10 @@ function AuthLayout({
         <div className="trust">
           <ShieldCheck />
           <span>Every generated schedule is independently validated.</span>
+        </div>
+        <div className="institute-signature">
+          <strong>Shri G. S. Institute of Technology &amp; Science</strong>
+          <span>Govt. Aided Autonomous Institute · Indore · Estd. 1952</span>
         </div>
       </section>
       <section className="login-panel">{children}</section>
@@ -356,11 +360,9 @@ function Shell({ user, logout }: { user: User; logout: () => void }) {
     <div className="app-shell">
       <aside className={open ? "open" : ""}>
         <div className="logo">
-          <div>
-            <School />
-          </div>
+          <img src="/sgsits-logo.png" alt="SGSITS Indore emblem" />
           <span>
-            Chronos<strong>Academic</strong>
+            <strong>SGSITS</strong><small>Timetable System</small>
           </span>
           <button className="close" onClick={() => setOpen(false)}>
             <X />
@@ -518,8 +520,8 @@ function Dashboard({ user }: { user: User }) {
   return (
     <section className="page">
       <PageTitle
-        eyebrow="Admin-first workflow"
-        title="Build your timetable from the beginning"
+        eyebrow="SGSITS · Electrical Engineering"
+        title="Department timetable administration"
       >
         <div className="actions">
           <button className="secondary" onClick={async () => { try { setDownloadError(""); await downloadDatabase("backup"); } catch (error) { setDownloadError(errorText(error)); } }}><Download size={17} /> Private backup</button>

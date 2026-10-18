@@ -25,7 +25,7 @@ def _sqlite_source() -> Path:
 
 def _database_download(*, starter: bool) -> Response:
     source = _sqlite_source()
-    temporary = tempfile.NamedTemporaryFile(prefix="chronos-", suffix=".db", delete=False)
+    temporary = tempfile.NamedTemporaryFile(prefix="sgsits-timetable-", suffix=".db", delete=False)
     target = Path(temporary.name)
     temporary.close()
     try:
@@ -52,7 +52,7 @@ def _database_download(*, starter: bool) -> Response:
         content=payload,
         media_type="application/vnd.sqlite3",
         headers={
-            "Content-Disposition": f'attachment; filename="chronos-{label}-{stamp}.db"',
+            "Content-Disposition": f'attachment; filename="sgsits-timetable-{label}-{stamp}.db"',
             "Cache-Control": "no-store",
         },
     )

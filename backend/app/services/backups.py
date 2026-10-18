@@ -18,7 +18,7 @@ def create_timetable_backup(
     reason: str = "automatic_generation",
 ) -> TimetableBackup:
     snapshot = {
-        "format": "chronos-timetable-backup-v1",
+        "format": "sgsits-timetable-backup-v1",
         "timetable_id": table.id,
         "academic_year_id": table.academic_year_id,
         "version": table.version,

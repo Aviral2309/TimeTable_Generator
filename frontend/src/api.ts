@@ -123,7 +123,7 @@ export async function downloadDatabase(kind: "backup" | "starter") {
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
   const disposition = response.headers.get("Content-Disposition") || "";
-  const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] || `chronos-${kind}.db`;
+  const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] || `sgsits-timetable-${kind}.db`;
   const url = URL.createObjectURL(await response.blob());
   const anchor = document.createElement("a");
   anchor.href = url;

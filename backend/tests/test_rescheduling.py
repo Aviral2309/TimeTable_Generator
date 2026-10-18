@@ -34,7 +34,7 @@ def test_dynamic_rescheduling_moves_the_affected_class_and_preserves_validity():
     assert generated["valid"]
     table = db.scalar(select(Timetable).order_by(Timetable.id.desc()))
     backup = db.scalar(select(TimetableBackup).where(TimetableBackup.timetable_id == table.id))
-    assert backup and backup.snapshot["format"] == "chronos-timetable-backup-v1"
+    assert backup and backup.snapshot["format"] == "sgsits-timetable-backup-v1"
     assert len(backup.snapshot["sessions"]) == len(generated["assignments"])
     request = disruption_for_first_theory(db, table)
 
