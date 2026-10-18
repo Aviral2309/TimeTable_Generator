@@ -37,6 +37,7 @@ import {
   bootstrapStatus,
   create,
   createTermCohorts,
+  downloadDatabase,
   list,
   login,
   loadDemoData,
@@ -120,7 +121,7 @@ export default function App() {
   if (!user && bootstrap.isLoading)
     return <main className="loading-page">Opening timetable system…</main>;
   if (!user && bootstrap.data?.needs_admin)
-    return <FirstAdmin onLogin={setUser} />;
+    return <FirstAdmin onLogin={setUser} hasDepartmentData={Boolean(bootstrap.data.has_department_data)} />;
   return (
     <Routes>
       <Route
@@ -147,7 +148,7 @@ export default function App() {
   );
 }
 
-function FirstAdmin({ onLogin }: { onLogin: (u: User) => void }) {
+function FirstAdmin({ onLogin, hasDepartmentData }: { onLogin: (u: User) => void; hasDepartmentData: boolean }) {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const mutation = useMutation({
     mutationFn: () => bootstrapAdmin(form),
@@ -156,8 +157,10 @@ function FirstAdmin({ onLogin }: { onLogin: (u: User) => void }) {
   return (
     <AuthLayout
       eyebrow="First-time setup"
-      title="Create the administrator"
-      text="This installation is empty. Create the first admin account, then enter every academic record from the beginning."
+      title="Create the department administrator"
+      text={hasDepartmentData
+        ? "The department's starter records are ready. Create a private administrator account, then review and complete only the missing data."
+        : "Create the first administrator account, then enter or import the department's academic records."}
     >
       <form
         onSubmit={(e) => {
@@ -207,23 +210,40 @@ function FirstAdmin({ onLogin }: { onLogin: (u: User) => void }) {
 function Login({ onLogin }: { onLogin: (u: User) => void }) {
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState("");
+  const [role, setRole] = useState<User["role"] | null>(null);
   const mutation = useMutation({
-    mutationFn: () => login(email, password),
+    mutationFn: () => login(email, password, role!),
     onSuccess: (d) => saveSession(d, onLogin),
   });
+  const roleChoices: Array<{ role: User["role"]; label: string; detail: string; icon: React.ReactNode }> = [
+    { role: "admin", label: "Administrator", detail: "Manage data, generate, validate and publish", icon: <ShieldCheck /> },
+    { role: "faculty", label: "Faculty", detail: "View timetable and submit availability", icon: <Users /> },
+    { role: "student", label: "Student", detail: "View and download the published timetable", icon: <GraduationCap /> },
+  ];
   return (
     <AuthLayout
       eyebrow="Academic operations"
       title="Intelligent timetable planning, without the conflicts."
-      text="Sign in with the administrator account created during first-time setup."
+      text="Choose your workspace first. Your account is securely checked before the matching tools are opened."
     >
-      <form
+      {!role ? <div className="role-login">
+        <p className="eyebrow">Welcome</p>
+        <h2>Who are you?</h2>
+        <div className="role-chooser">
+          {roleChoices.map((choice) => <button type="button" className="role-card" key={choice.role} onClick={() => { mutation.reset(); setRole(choice.role); }}>
+            <span>{choice.icon}</span>
+            <div><strong>{choice.label}</strong><small>{choice.detail}</small></div>
+            <ChevronRight size={18} />
+          </button>)}
+        </div>
+      </div> : <form
         onSubmit={(e) => {
           e.preventDefault();
           mutation.mutate();
         }}
       >
-        <p className="eyebrow">Welcome back</p>
+        <button type="button" className="role-back" onClick={() => { mutation.reset(); setRole(null); }}>← Change workspace</button>
+        <p className="eyebrow">{role} workspace</p>
         <h2>Sign in to continue</h2>
         <label>
           Email
@@ -250,7 +270,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
           {mutation.isPending ? "Signing in…" : "Sign in"}
           <ChevronRight size={18} />
         </button>
-      </form>
+      </form>}
     </AuthLayout>
   );
 }
@@ -463,6 +483,7 @@ function Metric({
   );
 }
 function Dashboard({ user }: { user: User }) {
+  const [downloadError, setDownloadError] = useState("");
   const status = useQuery({
     queryKey: ["setup-status"],
     queryFn: setupStatus,
@@ -500,11 +521,16 @@ function Dashboard({ user }: { user: User }) {
         eyebrow="Admin-first workflow"
         title="Build your timetable from the beginning"
       >
-        <NavLink className="primary button-link" to="/prepare">
-          Continue setup
-          <ChevronRight size={18} />
-        </NavLink>
+        <div className="actions">
+          <button className="secondary" onClick={async () => { try { setDownloadError(""); await downloadDatabase("backup"); } catch (error) { setDownloadError(errorText(error)); } }}><Download size={17} /> Private backup</button>
+          <button className="secondary" onClick={async () => { try { setDownloadError(""); await downloadDatabase("starter"); } catch (error) { setDownloadError(errorText(error)); } }}><School size={17} /> Starter database</button>
+          <NavLink className="primary button-link" to="/prepare">
+            Continue setup
+            <ChevronRight size={18} />
+          </NavLink>
+        </div>
       </PageTitle>
+      {downloadError && <div className="error">{downloadError}</div>}
       <p className="lead">
         Start with editable dummy data for a quick department presentation, or
         enter the institution's real records manually before generation.
@@ -552,6 +578,10 @@ function Dashboard({ user }: { user: User }) {
               {step.complete && <ShieldCheck size={18} />}
             </div>
           ))}
+          {s?.readiness_issues?.length ? <div className="readiness-issues">
+            <strong>Generation blockers</strong>
+            {s.readiness_issues.slice(0, 5).map((issue, index) => <small key={`${issue.code}-${index}`}>{issue.message}</small>)}
+          </div> : null}
         </div>
         <div className={`card ${s?.ready_for_validation ? "accent" : ""}`}>
           <p className="eyebrow">Next action</p>

@@ -21,7 +21,7 @@ The application now uses an admin-first workflow. A fresh installation contains 
 - Feasibility-preserving direct-move Simulated Annealing refinement
 - Independent schedule validator and quality metrics
 - Immutable timetable versions, generation runs, diagnostics, validation reports, publication status, archives, and rescheduling history
-- Empty production database with an optional, explicit development-only seed script
+- Admin-downloadable private database backup plus a reusable department starter database that preserves academic records while removing all login accounts
 - Automated solver and API-service workflow tests
 - React 19 and TypeScript responsive administration interface
 - Secure role-based admin, faculty, and student workspaces
@@ -56,6 +56,7 @@ SQLAlchemy models -> SQLite (local) / PostgreSQL (deployment)
 - Administrators can mark a version `draft`, `published`, or `archived`. Every new version also receives an automatic checksummed JSON snapshot that can be downloaded from the timetable page; all earlier versions remain available in history.
 - Odd and Even terms use separate academic-term records and can be activated from the header without deleting either dataset.
 - SQLite is suitable for the local demonstration. PostgreSQL is the intended multi-user departmental deployment database, with scheduled encrypted database backups handled by deployment infrastructure.
+- The admin dashboard can download a private full SQLite backup or a sanitized department starter database. The starter copy retains institutes, semesters, faculty, rooms, availability, subjects, and timetable history, but removes user accounts so each deployment creates its own first administrator.
 
 The optimization package does not import FastAPI or SQLAlchemy. This keeps the mathematical engine testable and allows later workers or CLI tools to call it directly.
 

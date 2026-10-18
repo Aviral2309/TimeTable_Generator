@@ -78,6 +78,7 @@ export type SetupStatus = {
   counts: Record<string, number>;
   steps: { key: string; label: string; complete: boolean }[];
   ready_for_validation: boolean;
+  readiness_issues: Array<{ code: string; message: string }>;
   active_year: { id: number; name: string; term_type: "odd" | "even" } | null;
 };
 const API = "/api";
@@ -108,13 +109,35 @@ export async function request<T>(
   if (response.status === 204) return undefined as T;
   return response.json();
 }
-export const login = (email: string, password: string) =>
+export async function downloadDatabase(kind: "backup" | "starter") {
+  const endpoint = kind === "backup" ? "database-backup" : "starter-database";
+  const response = await fetch(`${API}/deployment/${endpoint}`, {
+    headers: token() ? { Authorization: `Bearer ${token()}` } : {},
+  });
+  if (!response.ok) {
+    let detail = `Download failed (${response.status})`;
+    try {
+      const body = await response.json();
+      detail = body.detail || detail;
+    } catch {}
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const filename = disposition.match(/filename="?([^";]+)"?/)?.[1] || `chronos-${kind}.db`;
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+export const login = (email: string, password: string, role: User["role"]) =>
   request<{ access_token: string; user: User }>("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, role }),
   });
 export const bootstrapStatus = () =>
-  request<{ needs_admin: boolean }>("/auth/bootstrap-status");
+  request<{ needs_admin: boolean; has_department_data: boolean }>("/auth/bootstrap-status");
 export const bootstrapAdmin = (data: {
   name: string;
   email: string;

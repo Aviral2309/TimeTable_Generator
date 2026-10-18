@@ -160,6 +160,15 @@ h1 {
   font-size: 2rem;
   margin-bottom: 30px;
 }
+.role-login { width:min(460px,100%); }
+.role-login h2 { margin-bottom:20px; }
+.role-chooser { display:grid; gap:12px; }
+.role-card { width:100%; display:grid; grid-template-columns:46px 1fr 20px; align-items:center; gap:13px; padding:16px; text-align:left; background:white; color:var(--navy); border:1px solid var(--line); border-radius:12px; }
+.role-card:hover { border-color:var(--teal); background:#f4fbfb; transform:translateY(-1px); }
+.role-card>span { width:42px; height:42px; border-radius:10px; display:grid; place-items:center; background:#e8f7f8; color:var(--blue); }
+.role-card div { display:grid; gap:3px; }
+.role-card small { color:var(--muted); font-weight:500; }
+.role-back { padding:0; margin-bottom:18px; color:var(--blue); background:transparent; border:0; }
 .login-panel label,
 .wizard-body label,
 .card label {
@@ -428,6 +437,8 @@ nav a.active {
 .progress-row small {
   color: var(--muted);
 }
+.readiness-issues { margin-top:16px; padding:14px; display:grid; gap:7px; border-radius:10px; background:#fff5eb; color:#8a4c13; }
+.readiness-issues small { color:#8a4c13; }
 .step {
   width: 30px;
   height: 30px;

@@ -219,3 +219,36 @@ def test_annealing_preserves_feasibility_and_best_cost():
     assert soft_cost(problem, improved) <= soft_cost(problem, result.assignments)
     assert stats["best_cost"] <= stats["initial_cost"]
 
+
+def test_balanced_daily_cohort_load_is_preferred_when_both_schedules_are_compact():
+    room = RoomResource(1, "R1", 80, "theory")
+    faculty = FacultyResource(1, "F1", weekly_limit=20, daily_limit=8, max_consecutive=8)
+    sessions = [
+        RequiredSession(f"s{index}", index, 0, f"C{index}", "theory", 1, 60, (1,), ("SEM-5",), (1,), cohort_id="SEM-5")
+        for index in range(1, 7)
+    ]
+    problem = Problem(
+        ["Monday", "Tuesday", "Wednesday"],
+        [0, 1, 2],
+        set(),
+        {1: room},
+        {1: faculty},
+        sessions,
+        [],
+        {"cohort_daily_load_imbalance": 20, "cohort_overloaded_days": 140},
+    )
+    balanced = [
+        Assignment(session.id, session.offering_id, 0, ["Monday", "Tuesday", "Wednesday"][(index - 1) // 2], (index - 1) % 2, 1, 1, (1,), ("SEM-5",))
+        for index, session in enumerate(sessions, 1)
+    ]
+    uneven = [
+        Assignment(session.id, session.offering_id, 0, "Monday" if index <= 3 else "Tuesday", (index - 1) % 3, 1, 1, (1,), ("SEM-5",))
+        for index, session in enumerate(sessions, 1)
+    ]
+
+    balanced_metrics = validate_schedule(problem, balanced)[2]
+    uneven_metrics = validate_schedule(problem, uneven)[2]
+
+    assert balanced_metrics["cohort_daily_load_imbalance"] < uneven_metrics["cohort_daily_load_imbalance"]
+    assert soft_cost(problem, balanced) < soft_cost(problem, uneven)
+

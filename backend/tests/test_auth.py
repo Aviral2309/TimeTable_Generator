@@ -39,6 +39,14 @@ def test_wrong_password_is_rejected():
     assert error.value.status_code == 401
 
 
+def test_selected_workspace_must_match_the_account_role():
+    db = session(); db.add(User(email="faculty@sgsits.ac.in", name="Faculty", password_hash=hash_password("right"), role="faculty")); db.commit()
+    with pytest.raises(HTTPException) as error:
+        login(LoginRequest(email="faculty@sgsits.ac.in", password="right", role="admin"), db)
+    assert error.value.status_code == 403
+    assert "Faculty" in error.value.detail
+
+
 def test_student_cannot_pass_admin_role_check():
     dependency = require_roles("admin")
     with pytest.raises(HTTPException) as error: dependency(User(email="s@test.edu", name="Student", password_hash="x", role="student"))

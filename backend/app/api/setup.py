@@ -37,6 +37,7 @@ def setup_status(db: Session = Depends(get_db), _: User = Depends(require_roles(
         "reservations": db.scalar(select(func.count()).select_from(FixedReservation)) or 0,
     }
     semesters_with_subjects = 0
+    configured = []
     if active_year:
         configured = db.scalars(select(SemesterOffering).where(semester_filter)).all()
         semesters_with_subjects = sum(bool(db.scalar(select(CourseOffering.id).where(CourseOffering.semester_offering_id == item.id).limit(1))) for item in configured)
@@ -47,7 +48,21 @@ def setup_status(db: Session = Depends(get_db), _: User = Depends(require_roles(
         {"key": "semesters", "label": f"{(active_year.term_type if active_year else 'odd').title()} term semesters", "complete": bool(active_year) and {s.semester_number for s in configured} == TERM_SEMESTERS[active_year.term_type]},
         {"key": "subjects", "label": "Subjects & allocations", "complete": bool(active_year) and {s.semester_number for s in configured} == TERM_SEMESTERS[active_year.term_type] and semesters_with_subjects == 3},
     ]
-    return {"counts": counts, "steps": steps, "ready_for_validation": all(step["complete"] for step in steps), "active_year": active_year}
+    readiness_issues: list[dict] = []
+    category_complete = all(step["complete"] for step in steps)
+    if category_complete and active_year:
+        try:
+            problem = build_database_problem(db, active_year.id, [semester.id for semester in configured])
+            readiness_issues = validate_problem(problem)
+        except ValueError as exc:
+            readiness_issues = [{"code": "configuration", "message": str(exc)}]
+    return {
+        "counts": counts,
+        "steps": steps,
+        "ready_for_validation": category_complete and not readiness_issues,
+        "readiness_issues": readiness_issues[:20],
+        "active_year": active_year,
+    }
 
 
 @router.post("/institutes", status_code=201)

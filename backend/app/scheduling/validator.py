@@ -145,6 +145,17 @@ def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
     late_student_periods = sum(sum(p >= 6 for p in periods) for periods in by_group_day.values())
     isolated_student_days = sum(len(periods) == 1 for periods in by_group_day.values())
     cohort_single_period_days = sum(len(periods) == 1 for periods in by_cohort_day.values())
+    cohort_ids = {session.cohort_id for session in problem.sessions if session.cohort_id}
+    cohort_daily_load_imbalance = 0
+    cohort_overloaded_days = 0
+    day_count = max(1, len(problem.days))
+    for cohort_id in cohort_ids:
+        loads = [len(by_cohort_day[cohort_id, day]) for day in problem.days]
+        total = sum(loads)
+        # Integer form of distance from the cohort's ideal average daily load.
+        cohort_daily_load_imbalance += sum(abs(load * day_count - total) for load in loads)
+        comfortable_maximum = (total + day_count - 1) // day_count + 1
+        cohort_overloaded_days += sum(load > comfortable_maximum for load in loads)
     room_changes = 0
     for (group, day), periods in by_group_day.items():
         ordered = sorted(periods)
@@ -154,5 +165,5 @@ def calculate_metrics(problem: Problem, assignments: list[Assignment]) -> dict:
             current_rooms = group_room_period[group, day, current]
             if len(previous_rooms) == 1 and len(current_rooms) == 1 and previous_rooms != current_rooms:
                 room_changes += 1
-    return {"student_gaps": student_gaps, "cohort_gaps": cohort_gaps, "faculty_gaps": faculty_gaps, "late_student_periods": late_student_periods, "isolated_student_days": isolated_student_days, "cohort_single_period_days": cohort_single_period_days, "student_room_changes": room_changes, "room_utilization": round(used_room_periods / available, 4), "scheduled_sessions": len(assignments)}
+    return {"student_gaps": student_gaps, "cohort_gaps": cohort_gaps, "faculty_gaps": faculty_gaps, "late_student_periods": late_student_periods, "isolated_student_days": isolated_student_days, "cohort_single_period_days": cohort_single_period_days, "cohort_daily_load_imbalance": cohort_daily_load_imbalance, "cohort_overloaded_days": cohort_overloaded_days, "student_room_changes": room_changes, "room_utilization": round(used_room_periods / available, 4), "scheduled_sessions": len(assignments)}
 

@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    role: str | None = Field(None, pattern="^(admin|faculty|student)$")
 
 
 class BootstrapAdminRequest(BaseModel):

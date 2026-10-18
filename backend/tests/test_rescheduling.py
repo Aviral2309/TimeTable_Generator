@@ -2,7 +2,9 @@ from sqlalchemy import select
 
 from app.models.entities import CourseOffering, RescheduleEvent, Timetable, TimetableBackup, TimetableSession
 from app.schemas.rescheduling import RescheduleRequest
-from app.services.generation import generate_problem
+from app.services.generation import best_compatible_assignments, generate_problem
+from app.scheduling.database_problem import build_database_problem
+from app.scheduling.validator import validate_schedule
 from app.services.rescheduling import apply_reschedule, plan_reschedule
 from test_database_generation import configured_problem
 
@@ -43,6 +45,18 @@ def test_dynamic_rescheduling_moves_the_affected_class_and_preserves_validity():
     assert proposal["moved_sessions"] >= 1
     affected = set(proposal["affected_session_ids"])
     assert any(change["session_id"] in affected for change in proposal["changes"])
+
+
+def test_saved_timetable_can_be_reused_as_a_valid_quality_warm_start():
+    db, year, semester_ids = configured_problem()
+    generated = generate_problem(db, year.id, "cp_sat", 10, 42, semester_ids)
+    problem = build_database_problem(db, year.id, semester_ids)
+
+    previous = best_compatible_assignments(db, problem, year.id)
+
+    assert generated["valid"] and previous is not None
+    assert validate_schedule(problem, previous)[0]
+    assert len(previous) == len(problem.sessions)
 
 
 def test_applying_reschedule_creates_a_new_version_and_history_event():

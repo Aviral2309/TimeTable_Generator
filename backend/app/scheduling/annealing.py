@@ -16,6 +16,8 @@ def soft_cost(problem: Problem, schedule: list[Assignment]) -> float:
         + metrics["late_student_periods"] * problem.weights.get("late_student_periods", 10)
         + metrics["isolated_student_days"] * problem.weights.get("isolated_student_days", 8)
         + metrics["cohort_single_period_days"] * problem.weights.get("cohort_single_period_days", 300)
+        + metrics["cohort_daily_load_imbalance"] * problem.weights.get("cohort_daily_load_imbalance", 12)
+        + metrics["cohort_overloaded_days"] * problem.weights.get("cohort_overloaded_days", 100)
         + metrics["student_room_changes"] * problem.weights.get("student_room_changes", 30)
     )
 

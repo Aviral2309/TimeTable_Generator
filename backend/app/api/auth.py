@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.core.security import create_token, get_current_user, hash_password, verify_password
 from app.db.session import get_db
-from app.models.entities import User
+from app.models.entities import Institute, User
 from app.schemas.auth import BootstrapAdminRequest, LoginRequest, LoginResponse, UserResponse
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -11,7 +11,10 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 @router.get("/bootstrap-status")
 def bootstrap_status(db: Session = Depends(get_db)):
-    return {"needs_admin": db.scalar(select(User.id).limit(1)) is None}
+    return {
+        "needs_admin": db.scalar(select(User.id).limit(1)) is None,
+        "has_department_data": db.scalar(select(Institute.id).limit(1)) is not None,
+    }
 
 
 @router.post("/bootstrap", response_model=LoginResponse, status_code=201)
@@ -34,6 +37,8 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == body.email.lower(), User.active.is_(True)))
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "Incorrect email or password")
+    if body.role and user.role != body.role:
+        raise HTTPException(403, f"This account is registered as {user.role}. Choose the {user.role.title()} workspace.")
     return LoginResponse(access_token=create_token(user), user=UserResponse.model_validate(user))
 
 

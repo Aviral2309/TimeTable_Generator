@@ -6,6 +6,7 @@ from app.api.master_data import router as master_data_router
 from app.api.setup import router as setup_router
 from app.api.rescheduling import router as rescheduling_router
 from app.api.users import router as users_router
+from app.api.deployment import router as deployment_router
 from app.core.config import get_settings
 from app.db.session import Base, engine
 from app import models  # noqa: F401
@@ -19,6 +20,7 @@ app.include_router(master_data_router)
 app.include_router(setup_router)
 app.include_router(rescheduling_router)
 app.include_router(users_router)
+app.include_router(deployment_router)
 
 
 @app.on_event("startup")

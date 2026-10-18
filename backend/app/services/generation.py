@@ -4,9 +4,50 @@ from sqlalchemy.orm import Session
 from app.models.entities import GenerationRun, Timetable, TimetableSession, ValidationReport
 from app.scheduling.annealing import refine, soft_cost
 from app.scheduling.database_problem import build_database_problem
+from app.scheduling.domain import Assignment, Problem
 from app.scheduling.solver import solve
 from app.scheduling.validator import validate_schedule
 from app.services.backups import create_timetable_backup
+
+
+def best_compatible_assignments(db: Session, problem: Problem, academic_year_id: int) -> list[Assignment] | None:
+    """Find the strongest saved placement that still validates against current master data."""
+    tables = db.scalars(
+        select(Timetable)
+        .where(Timetable.academic_year_id == academic_year_id)
+        .order_by(Timetable.version.desc())
+    ).all()
+    required = {(session.offering_id, session.occurrence): session for session in problem.sessions}
+    best: list[Assignment] | None = None
+    best_cost: float | None = None
+    for table in tables:
+        rows = db.scalars(select(TimetableSession).where(TimetableSession.timetable_id == table.id)).all()
+        if len(rows) != len(required):
+            continue
+        assignments: list[Assignment] = []
+        for row in rows:
+            session = required.get((row.course_offering_id, row.occurrence))
+            if not session:
+                assignments = []
+                break
+            assignments.append(Assignment(
+                session.id,
+                session.offering_id,
+                session.occurrence,
+                row.day,
+                row.start_period,
+                session.duration,
+                row.room_id,
+                session.faculty_ids,
+                session.group_ids,
+                session.session_type,
+            ))
+        valid, _, _ = validate_schedule(problem, assignments)
+        if valid:
+            cost = soft_cost(problem, assignments)
+            if best_cost is None or cost < best_cost:
+                best, best_cost = assignments, cost
+    return best
 
 
 def generate_problem(db: Session, academic_year_id: int, mode: str, time_limit: float, seed: int, semester_ids: list[int] | None = None) -> dict:
@@ -19,12 +60,16 @@ def generate_problem(db: Session, academic_year_id: int, mode: str, time_limit: 
     assignments, refinement = result.assignments, None
     if result.status in {"optimal", "feasible"} and mode == "hybrid":
         # Multiple deterministic starts are more reliable than accepting one
-        # random local optimum for gaps and fragmented semester days.
-        candidates = [refine(problem, assignments, 7000, seed + offset) for offset in range(3)]
+        # random local optimum. A compatible prior timetable is one of the
+        # starts, which guarantees generation cannot regress from a good layout.
+        previous = best_compatible_assignments(db, problem, academic_year_id)
+        starts = [assignments, assignments, previous or assignments]
+        candidates = [refine(problem, start, 7000, seed + offset) for offset, start in enumerate(starts)]
         assignments, best_details = min(candidates, key=lambda item: soft_cost(problem, item[0]))
         refinement = {
             **best_details,
             "strategy": "best_of_three",
+            "used_previous_timetable": previous is not None,
             "candidate_costs": [soft_cost(problem, candidate) for candidate, _ in candidates],
         }
     valid, errors, metrics = validate_schedule(problem, assignments) if assignments else (False, [], {})
