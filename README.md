@@ -25,6 +25,7 @@ The application now uses an admin-first workflow. A fresh installation contains 
 - Automated solver and API-service workflow tests
 - React 19 and TypeScript responsive administration interface
 - Secure role-based admin, faculty, and student workspaces
+- Authenticated self-service password changes plus admin-controlled account creation, reset, activation and removal
 - SGSITS-domain role accounts, admin-only master-data, reservation and availability controls, and read-only student/faculty workspaces
 - Odd/Even term switching without deleting the other term or its timetable history
 - Minimum-disruption faculty/room rescheduling with before/after approval
@@ -33,6 +34,8 @@ The application now uses an admin-first workflow. A fresh installation contains 
 - Generation controls, hybrid result metrics, weekly timetable filtering, analytics, and CSV download
 - Portrait A4 print/PDF output with one semester per page and a dedicated faculty timetable view
 - Automatic checksummed JSON snapshot backup for every generated or rescheduled timetable version
+- Integrity-checked private database restoration with an automatic pre-restore rollback copy
+- Per-version independent validation reports displayed with gaps, room changes and utilization metrics
 
 ## Architecture
 
@@ -126,7 +129,7 @@ The API never labels `unknown` as infeasible. A timetable is persisted only afte
 
 Implemented: optimization, independent validation, role security, admin master-data management, written faculty/room availability, Odd/Even term switching, immutable timetable history, published/archived backups, role-filtered views, minimum-disruption rescheduling, analytics, print layout, and CSV export.
 
-The next planned layer is the natural-language assistant for searching records and translating solver diagnostics into conversational explanations. It will call the existing permission-checked APIs and will not bypass scheduling validation.
+The operational handover workflow is documented in [Department handover guide](docs/DEPARTMENT_HANDOVER.md). The next optional layer is the natural-language assistant for searching records and translating solver diagnostics into conversational explanations. It will call the existing permission-checked APIs and will not bypass scheduling validation.
 
 See [algorithm documentation](docs/ALGORITHM.md), [Phase 1 report](docs/PHASE_1.md), [Phase 2 report](docs/PHASE_2.md), and [API notes](docs/API.md).
 

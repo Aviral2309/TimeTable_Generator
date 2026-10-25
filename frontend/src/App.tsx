@@ -14,6 +14,7 @@ import {
   FlaskConical,
   GraduationCap,
   LayoutDashboard,
+  KeyRound,
   LogOut,
   Menu,
   Pencil,
@@ -35,9 +36,11 @@ import {
   applyReschedule,
   bootstrapAdmin,
   bootstrapStatus,
+  changePassword,
   create,
   createTermCohorts,
   downloadDatabase,
+  restoreDatabase,
   list,
   login,
   loadDemoData,
@@ -66,6 +69,7 @@ import {
   timetableBackup,
   timetableBackups,
   timetable,
+  timetableValidation,
   timetableHistory,
   update,
   updateOffering,
@@ -320,18 +324,21 @@ const adminNav = [
   ["Reschedule", "/reschedule", RefreshCw],
   ["Timetable", "/timetable", CalendarDays],
   ["Analytics", "/analytics", BarChart3],
+  ["My Account", "/account", KeyRound],
 ] as const;
 const studentNav = [
   ["My Timetable", "/timetable", CalendarDays],
   ["Faculty Directory", "/faculty", Users],
   ["Rooms & Labs", "/rooms", Building2],
   ["Download", "/download", Download],
+  ["My Account", "/account", KeyRound],
 ] as const;
 const facultyNav = [
   ["My Timetable", "/timetable", CalendarDays],
   ["Faculty Directory", "/faculty", Users],
   ["Rooms & Labs", "/rooms", Building2],
   ["Download", "/download", Download],
+  ["My Account", "/account", KeyRound],
 ] as const;
 function Shell({ user, logout }: { user: User; logout: () => void }) {
   const [open, setOpen] = useState(false);
@@ -437,6 +444,7 @@ function Shell({ user, logout }: { user: User; logout: () => void }) {
           />
           <Route path="users" element={user.role === "admin" ? <MasterList resource="users" title="User Access" user={user} /> : <Navigate to="/" />} />
           <Route path="analytics" element={user.role === "admin" ? <Analytics /> : <Navigate to="/" />} />
+          <Route path="account" element={<AccountPage user={user} />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
@@ -485,6 +493,15 @@ function Metric({
 }
 function Dashboard({ user }: { user: User }) {
   const [downloadError, setDownloadError] = useState("");
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const restore = useMutation({
+    mutationFn: (file: File) => restoreDatabase(file),
+    onSuccess: (result) => {
+      window.alert(`${result.message}\nAutomatic rollback copy: ${result.rollback_backup}`);
+      localStorage.clear();
+      window.location.href = "/login";
+    },
+  });
   const status = useQuery({
     queryKey: ["setup-status"],
     queryFn: setupStatus,
@@ -602,6 +619,18 @@ function Dashboard({ user }: { user: User }) {
             {s?.ready_for_validation ? "Go to generation" : "Open setup"}
           </NavLink>
         </div>
+      </div>
+      <div className="card data-protection">
+        <div>
+          <p className="eyebrow">Data protection</p>
+          <h3>Restore a private database backup</h3>
+          <p className="muted">Only a verified full backup containing an active administrator is accepted. Before restoration, the system automatically saves the current database in the server's backups folder.</p>
+        </div>
+        <input type="file" accept=".db,.sqlite,.sqlite3" onChange={(event) => setRestoreFile(event.target.files?.[0] || null)} />
+        <button className="secondary" disabled={!restoreFile || restore.isPending} onClick={() => {
+          if (restoreFile && window.confirm("Restore this private backup? The current database will first be saved as a rollback copy, then replaced.")) restore.mutate(restoreFile);
+        }}>{restore.isPending ? "Restoring…" : "Restore backup"}</button>
+        {restore.error && <div className="error">{errorText(restore.error)}</div>}
       </div>
     </section>
   );
@@ -1878,6 +1907,12 @@ function TimetablePage({ user }: { user: User }) {
     queryFn: () => timetable(selectedVersion || undefined),
     retry: false,
   });
+  const validationQ = useQuery({
+    queryKey: ["timetable-validation", q.data?.id],
+    queryFn: () => timetableValidation(q.data!.id),
+    enabled: Boolean(q.data?.id),
+    retry: false,
+  });
   const statusMutation = useMutation({
     mutationFn: (status: "draft" | "published" | "archived") => setTimetableStatus(q.data!.id, status),
     onSuccess: async () => {
@@ -1962,7 +1997,18 @@ function TimetablePage({ user }: { user: User }) {
       ) : q.error ? (
         <EmptyState text="No generated timetable exists yet." />
       ) : (
-        <><div className="timetable-record-banner"><span>{q.data!.academic_year} · {q.data!.academic_term.toUpperCase()} term</span><strong>Version {q.data!.version} · {q.data!.status.toUpperCase()}</strong><small>{q.data!.created_at ? new Date(q.data!.created_at!).toLocaleString() : "Stored timetable record"}{user.role === "admin" ? currentBackup ? ` · Backup verified ${currentBackup.checksum.slice(0, 12)}…` : " · Legacy version (download backup unavailable)" : ""}</small></div><div className={`official-timetables ${viewMode}`}>
+        <><div className="timetable-record-banner"><span>{q.data!.academic_year} · {q.data!.academic_term.toUpperCase()} term</span><strong>Version {q.data!.version} · {q.data!.status.toUpperCase()}</strong><small>{q.data!.created_at ? new Date(q.data!.created_at!).toLocaleString() : "Stored timetable record"}{user.role === "admin" ? currentBackup ? ` · Backup verified ${currentBackup.checksum.slice(0, 12)}…` : " · Legacy version (download backup unavailable)" : ""}</small></div>
+        {validationQ.data && <div className={`card validation-report screen-only ${validationQ.data.valid ? "passed" : "failed"}`}>
+          <div className="validation-report-head"><div>{validationQ.data.valid ? <ShieldCheck /> : <X />}<span><strong>{validationQ.data.valid ? "All hard constraints passed" : "Validation issues detected"}</strong><small>Independent report for version {validationQ.data.version} · {validationQ.data.scheduled_sessions} scheduled sessions</small></span></div><span className="badge">{validationQ.data.status}</span></div>
+          <div className="validation-metrics">
+            <span><b>{validationQ.data.metrics.student_gaps ?? 0}</b> student gaps</span>
+            <span><b>{validationQ.data.metrics.faculty_gaps ?? 0}</b> faculty gaps</span>
+            <span><b>{validationQ.data.metrics.student_room_changes ?? 0}</b> room changes</span>
+            <span><b>{Math.round((validationQ.data.metrics.room_utilization ?? 0) * 100)}%</b> room utilization</span>
+          </div>
+          {validationQ.data.errors?.length > 0 && <div className="generation-diagnostics">{validationQ.data.errors.map((item: any, index: number) => <small key={`${item.code}-${index}`}>{item.message || item.code}</small>)}</div>}
+        </div>}
+        <div className={`official-timetables ${viewMode}`}>
           {viewMode === "faculty" ? (
             activeFacultyId ? <div className="print-page"><FacultyTimetable data={q.data!} sessions={facultySessions} facultyName={facultyName} facultyCode={facultyCode} /></div> : <EmptyState text="Select a faculty member to view and print their timetable." />
           ) : shownSemesters.map((number) => (
@@ -1983,6 +2029,41 @@ async function downloadTimetableBackup(backupId: number, academicYear: string, v
   anchor.click();
   URL.revokeObjectURL(url);
 }
+
+function AccountPage({ user }: { user: User }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [localError, setLocalError] = useState("");
+  const mutation = useMutation({
+    mutationFn: () => changePassword(currentPassword, newPassword),
+    onSuccess: () => {
+      setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setLocalError("");
+    },
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault(); mutation.reset();
+    if (newPassword !== confirmPassword) { setLocalError("New passwords do not match"); return; }
+    setLocalError(""); mutation.mutate();
+  };
+  return <section className="page">
+    <PageTitle eyebrow="Secure account" title="My account" />
+    <div className="grid-2 account-layout">
+      <div className="card account-summary"><ShieldCheck /><div><small>Signed in as</small><h2>{user.name}</h2><p>{user.email}</p><span className="badge">{user.role}</span></div></div>
+      <form className="card password-form" onSubmit={submit}>
+        <h3>Change password</h3>
+        <p className="muted">Use at least 8 characters. This changes only your login and never modifies timetable data.</p>
+        <label>Current password<input required type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+        <label>New password<input required minLength={8} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+        <label>Confirm new password<input required minLength={8} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+        {(localError || mutation.error) && <div className="error">{localError || errorText(mutation.error)}</div>}
+        {mutation.isSuccess && <div className="validation-ok"><ShieldCheck />Password changed successfully.</div>}
+        <button className="primary" disabled={mutation.isPending}>{mutation.isPending ? "Changing…" : "Change password"}</button>
+      </form>
+    </div>
+  </section>;
+}
+
 async function downloadCsv() {
   const response = await fetch("/api/export/latest.csv", {
     headers: {
@@ -2283,7 +2364,7 @@ function CreateForm({
               password: "",
               role: "student",
               faculty_id: null,
-              student_group_id: "",
+              student_group_id: options.student_groups?.[0] || "",
               active: true,
             }
         : {
@@ -2396,6 +2477,11 @@ function CreateForm({
             <select disabled={resource === "users" && form.role !== "faculty"} value={form[key] || ""} onChange={(e) => updateField(key, e.target.value)}>
               <option value="">{resource === "users" ? "Select linked faculty" : "No faculty-specific block"}</option>
               {options.faculty.map((faculty: any) => <option key={faculty.id} value={faculty.id}>{faculty.faculty_code} · {faculty.name}</option>)}
+            </select>
+          ) : key === "student_group_id" ? (
+            <select disabled={resource === "users" && form.role !== "student"} value={form[key] || ""} onChange={(e) => updateField(key, e.target.value)}>
+              <option value="">Select semester or batch</option>
+              {(options.student_groups || []).map((group: string) => <option key={group} value={group}>{group}</option>)}
             </select>
           ) : key === "room_type" ? (
             <select

@@ -3,12 +3,12 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from app.api.auth import login
+from app.api.auth import change_password, login
 from app.api.master_data import room_create
 from app.core.security import decode_token, hash_password, require_roles, verify_password
 from app.db.session import Base
 from app.models.entities import Department, Room, User
-from app.schemas.auth import LoginRequest, UserCreate
+from app.schemas.auth import LoginRequest, PasswordChangeRequest, UserCreate
 from app.schemas.master_data import RoomCreate
 
 
@@ -71,4 +71,14 @@ def test_new_role_accounts_require_sgsits_email_domain():
         UserCreate(name="Student", email="student@gmail.com", password="secret123", role="student", student_group_id="SEM-3")
     account = UserCreate(name="Student", email="student@sgsits.ac.in", password="secret123", role="student", student_group_id="SEM-3")
     assert str(account.email) == "student@sgsits.ac.in"
+
+
+def test_authenticated_user_can_change_only_with_current_password():
+    db = session(); user = User(email="faculty@sgsits.ac.in", name="Faculty", password_hash=hash_password("old-secret"), role="faculty")
+    db.add(user); db.commit()
+    with pytest.raises(HTTPException) as error:
+        change_password(PasswordChangeRequest(current_password="wrong", new_password="new-secret"), db, user)
+    assert error.value.status_code == 400
+    result = change_password(PasswordChangeRequest(current_password="old-secret", new_password="new-secret"), db, user)
+    assert result["message"] and verify_password("new-secret", user.password_hash)
 

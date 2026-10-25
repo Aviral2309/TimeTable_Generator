@@ -13,6 +13,17 @@ class BootstrapAdminRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @model_validator(mode="after")
+    def require_new_password(self):
+        if self.current_password == self.new_password:
+            raise ValueError("New password must be different from the current password")
+        return self
+
+
 class UserResponse(BaseModel):
     id: int
     email: str

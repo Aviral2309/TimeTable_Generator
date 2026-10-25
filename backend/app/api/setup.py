@@ -176,6 +176,12 @@ def delete_working_week(db: Session = Depends(get_db), _: User = Depends(require
 
 @router.get("/options")
 def options(db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "faculty", "student"))):
+    active_year = db.scalar(select(AcademicYear).where(AcademicYear.active.is_(True)).order_by(AcademicYear.id.desc()).limit(1))
+    active_semesters = db.scalars(select(SemesterOffering).where(SemesterOffering.academic_year_id == active_year.id)).all() if active_year else []
+    semester_ids = [semester.id for semester in active_semesters]
+    active_offerings = db.scalars(select(CourseOffering).where(CourseOffering.semester_offering_id.in_(semester_ids))).all() if semester_ids else []
+    student_groups = {f"SEM-{semester.semester_number}" for semester in active_semesters}
+    student_groups.update(group for offering in active_offerings for group in (offering.participant_group_ids or []))
     return {
         "institutes": db.scalars(select(Institute).order_by(Institute.id)).all(),
         "academic_years": db.scalars(select(AcademicYear).order_by(AcademicYear.name.desc(), AcademicYear.term_type)).all(),
@@ -183,6 +189,7 @@ def options(db: Session = Depends(get_db), _: User = Depends(require_roles("admi
         "faculty": db.scalars(select(Faculty).where(Faculty.active.is_(True))).all(),
         "rooms": db.scalars(select(Room).where(Room.active.is_(True))).all(),
         "time_slots": db.scalars(select(TimeSlot).order_by(TimeSlot.day, TimeSlot.period_index)).all(),
+        "student_groups": sorted(student_groups),
     }
 
 

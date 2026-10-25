@@ -8,6 +8,7 @@ Authenticated endpoints expect `Authorization: Bearer <token>`. Obtain the token
 
 - `POST /api/auth/login`
 - `GET /api/auth/me`
+- `POST /api/auth/change-password` changes only the authenticated user's password after verifying the current password.
 - Admin: generation, analytics, and master-data writes
 - Faculty: own timetable plus permitted master-data reads
 - Student: published timetable filtered to their participant group
@@ -57,4 +58,11 @@ Returns persisted solver metadata and diagnostics for reproducibility.
 - `GET /api/timetables/latest` returns the authoritative scheduled sessions, filtered for faculty and students.
 - `GET /api/export/latest.csv` produces a downloadable schedule from those same records.
 - `GET /api/analytics/summary` returns recent generation statuses and metrics for administrators.
+- `GET /api/timetables/{id}/validation` returns the persisted independent constraint report and quality metrics for a timetable version.
+
+## Backup and handover
+
+- `GET /api/deployment/database-backup` downloads a private full SQLite backup including login accounts.
+- `GET /api/deployment/starter-database` downloads department data with all login accounts removed.
+- `POST /api/deployment/restore-database` accepts only a compatible, integrity-checked private SQLite backup containing an active administrator. The current database is automatically copied into `backups/` before restoration.
 

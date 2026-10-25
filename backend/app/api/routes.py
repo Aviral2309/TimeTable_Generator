@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 import csv
 import io
 from app.core.security import require_roles
 from app.db.session import get_db
-from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, Timetable, TimetableBackup, TimetableSession, User
+from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, Timetable, TimetableBackup, TimetableSession, User, ValidationReport
 from app.schemas.generation import GenerationRequest, GenerationResponse, TimetableStatusRequest
 from app.services.generation import generate_problem
 
@@ -29,7 +29,7 @@ def generate(request: GenerationRequest, db: Session = Depends(get_db), _: User 
 
 
 @router.get("/generation/runs/{run_id}")
-def get_run(run_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "faculty"))):
+def get_run(run_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     run = db.scalar(select(GenerationRun).where(GenerationRun.id == run_id))
     if not run: raise HTTPException(404, "Generation run not found")
     return {"id": run.id, "status": run.status, "solver_mode": run.solver_mode, "objective_value": run.objective_value, "runtime_seconds": run.runtime_seconds, "diagnostics": run.diagnostics}
@@ -69,15 +69,17 @@ def latest_timetable(db: Session = Depends(get_db), user: User = Depends(require
     active_year = db.scalar(select(AcademicYear).where(AcademicYear.active.is_(True)).order_by(desc(AcademicYear.id)).limit(1))
     query = select(Timetable)
     if active_year: query = query.where(Timetable.academic_year_id == active_year.id)
+    if user.role != "admin": query = query.where(Timetable.status == "published")
     table = db.scalar(query.order_by(desc(Timetable.version), desc(Timetable.id)).limit(1))
     if not table: raise HTTPException(404, "No generated timetable exists for the active academic term")
     return _timetable_payload(table, db, user)
 
 
 @router.get("/timetables")
-def timetable_history(academic_year_id: int | None = None, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "faculty", "student"))):
+def timetable_history(academic_year_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require_roles("admin", "faculty", "student"))):
     query = select(Timetable)
     if academic_year_id: query = query.where(Timetable.academic_year_id == academic_year_id)
+    if user.role != "admin": query = query.where(Timetable.status == "published")
     tables = db.scalars(query.order_by(desc(Timetable.id))).all()
     year_ids = {table.academic_year_id for table in tables}
     years = {year.id: year for year in db.scalars(select(AcademicYear).where(AcademicYear.id.in_(year_ids))).all()} if year_ids else {}
@@ -90,7 +92,32 @@ def timetable_history(academic_year_id: int | None = None, db: Session = Depends
 def timetable_by_id(timetable_id: int, db: Session = Depends(get_db), user: User = Depends(require_roles("admin", "faculty", "student"))):
     table = db.get(Timetable, timetable_id)
     if not table: raise HTTPException(404, "Timetable version not found")
+    if user.role != "admin" and table.status != "published":
+        raise HTTPException(403, "This timetable version has not been published")
     return _timetable_payload(table, db, user)
+
+
+@router.get("/timetables/{timetable_id}/validation")
+def timetable_validation(timetable_id: int, db: Session = Depends(get_db), user: User = Depends(require_roles("admin", "faculty", "student"))):
+    table = db.get(Timetable, timetable_id)
+    if not table: raise HTTPException(404, "Timetable version not found")
+    if user.role != "admin" and table.status != "published":
+        raise HTTPException(403, "This timetable version has not been published")
+    run = db.get(GenerationRun, table.generation_run_id)
+    report = db.scalar(select(ValidationReport).where(ValidationReport.generation_run_id == table.generation_run_id).order_by(desc(ValidationReport.id)).limit(1))
+    if not report: raise HTTPException(404, "Validation report is unavailable for this legacy timetable")
+    expected = db.scalar(select(func.count()).select_from(TimetableSession).where(TimetableSession.timetable_id == table.id)) or 0
+    return {
+        "timetable_id": table.id,
+        "version": table.version,
+        "valid": report.valid,
+        "status": run.status if run else "unknown",
+        "errors": report.errors,
+        "diagnostics": run.diagnostics if run else [],
+        "metrics": report.metrics,
+        "scheduled_sessions": expected,
+        "checked_at": run.created_at if run else None,
+    }
 
 
 @router.patch("/timetables/{timetable_id}/status")

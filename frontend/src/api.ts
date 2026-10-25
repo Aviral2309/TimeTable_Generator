@@ -131,10 +131,30 @@ export async function downloadDatabase(kind: "backup" | "starter") {
   anchor.click();
   URL.revokeObjectURL(url);
 }
+export async function restoreDatabase(file: File) {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(`${API}/deployment/restore-database`, {
+    method: "POST",
+    headers: token() ? { Authorization: `Bearer ${token()}` } : {},
+    body,
+  });
+  if (!response.ok) {
+    let detail = `Restore failed (${response.status})`;
+    try { detail = (await response.json()).detail || detail; } catch {}
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  return response.json();
+}
 export const login = (email: string, password: string, role: User["role"]) =>
   request<{ access_token: string; user: User }>("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password, role }),
+  });
+export const changePassword = (currentPassword: string, newPassword: string) =>
+  request<{ message: string }>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
   });
 export const bootstrapStatus = () =>
   request<{ needs_admin: boolean; has_department_data: boolean }>("/auth/bootstrap-status");
@@ -156,6 +176,7 @@ export const update = (resource: string, id: number, data: unknown) =>
 export const remove = (resource: string, id: number) =>
   request(`/${resource}/${id}`, { method: "DELETE" });
 export const timetable = (id?: number) => request<TimetableData>(id ? `/timetables/${id}` : "/timetables/latest");
+export const timetableValidation = (id: number) => request<any>(`/timetables/${id}/validation`);
 export const timetableHistory = (academicYearId?: number) =>
   request<{ items: any[] }>(`/timetables${academicYearId ? `?academic_year_id=${academicYearId}` : ""}`);
 export const setTimetableStatus = (id: number, status: "draft" | "published" | "archived") =>

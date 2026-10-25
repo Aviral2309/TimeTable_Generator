@@ -1,6 +1,10 @@
 from sqlalchemy import select
 
 from app.models.entities import CourseOffering, RescheduleEvent, Timetable, TimetableBackup, TimetableSession
+from app.api.routes import timetable_by_id, timetable_history, timetable_validation
+from app.models.entities import User
+from fastapi import HTTPException
+import pytest
 from app.schemas.rescheduling import RescheduleRequest
 from app.services.generation import best_compatible_assignments, generate_problem
 from app.scheduling.database_problem import build_database_problem
@@ -72,3 +76,32 @@ def test_applying_reschedule_creates_a_new_version_and_history_event():
     assert db.scalar(select(RescheduleEvent)).result_timetable_id == result["result_timetable_id"]
     backup = db.scalar(select(TimetableBackup).where(TimetableBackup.timetable_id == result["result_timetable_id"]))
     assert backup and backup.reason == "automatic_reschedule"
+
+
+def test_every_generated_timetable_exposes_its_validation_report():
+    db, year, semester_ids = configured_problem()
+    generated = generate_problem(db, year.id, "cp_sat", 10, 42, semester_ids)
+    table = db.scalar(select(Timetable).order_by(Timetable.id.desc()))
+    actor = type("Actor", (), {"role": "admin"})()
+
+    report = timetable_validation(table.id, db, actor)
+
+    assert generated["valid"] and report["valid"]
+    assert report["scheduled_sessions"] == len(generated["assignments"])
+    assert report["metrics"]["scheduled_sessions"] == len(generated["assignments"])
+
+
+def test_non_admins_can_read_only_published_timetable_versions():
+    db, year, semester_ids = configured_problem()
+    generate_problem(db, year.id, "cp_sat", 10, 42, semester_ids)
+    table = db.scalar(select(Timetable).order_by(Timetable.id.desc()))
+    faculty = User(email="reader@sgsits.ac.in", name="Reader", password_hash="x", role="faculty", faculty_id=1)
+
+    assert timetable_history(None, db, faculty)["items"] == []
+    with pytest.raises(HTTPException) as error:
+        timetable_by_id(table.id, db, faculty)
+    assert error.value.status_code == 403
+
+    table.status = "published"; db.commit()
+    assert timetable_history(None, db, faculty)["items"][0]["id"] == table.id
+    assert timetable_by_id(table.id, db, faculty)["id"] == table.id
