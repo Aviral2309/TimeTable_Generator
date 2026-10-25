@@ -29,6 +29,7 @@ def solve(
     candidate_map = {}
     by_room_slot, by_faculty_slot, by_group_slot = defaultdict(list), defaultdict(list), defaultdict(list)
     by_cohort_full_slot, by_cohort_subgroup_slot, by_cohort_elective_slot = defaultdict(list), defaultdict(list), defaultdict(list)
+    by_cohort_slot = defaultdict(list)
     by_faculty_day = defaultdict(list)
     by_offering_day = defaultdict(list)
     start_by_session_day = defaultdict(list)
@@ -55,6 +56,7 @@ def solve(
                 if session.cohort_id:
                     target = by_cohort_elective_slot if session.is_elective else by_cohort_subgroup_slot if session.is_subgroup else by_cohort_full_slot
                     target[session.cohort_id, day, p].append(var)
+                    by_cohort_slot[session.cohort_id, day, p].append(var)
             for f in session.faculty_ids: by_faculty_day[f, day].append((var, len(periods)))
             by_offering_day[session.offering_id, day].append(var)
             start_by_session_day[session.id, day].append(var)
@@ -91,6 +93,33 @@ def solve(
         for elective_var in elective_vars:
             if full_vars:
                 model.add(sum(full_vars) + elective_var <= 1)
+    # If a cohort has no morning session, its first afternoon session must
+    # begin immediately after lunch instead of leaving a delayed day start.
+    cohort_ids = {session.cohort_id for session in problem.sessions if session.cohort_id}
+    for cohort_id in cohort_ids:
+        for day in problem.days:
+            blocked = sorted(period for blocked_day, period in problem.blocked_slots if blocked_day == day)
+            if not blocked:
+                continue
+            post_lunch_periods = [period for period in problem.periods if period > max(blocked)]
+            if not post_lunch_periods:
+                continue
+            first_after_lunch = min(post_lunch_periods)
+            morning_periods = [period for period in problem.periods if period < min(blocked)]
+            support = {
+                var.index: var
+                for period in [*morning_periods, first_after_lunch]
+                for var in by_cohort_slot.get((cohort_id, day, period), [])
+            }
+            delayed = {
+                var.index: var
+                for period in post_lunch_periods
+                if period > first_after_lunch
+                for var in by_cohort_slot.get((cohort_id, day, period), [])
+            }
+            support_sum = sum(support.values())
+            for delayed_var in delayed.values():
+                model.add(delayed_var <= support_sum)
     for (faculty_id, _), pairs in by_faculty_day.items():
         model.add(sum(v * periods for v, periods in pairs) <= problem.faculty[faculty_id].daily_limit)
     for faculty_id, faculty in problem.faculty.items():

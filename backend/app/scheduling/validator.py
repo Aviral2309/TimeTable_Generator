@@ -91,6 +91,26 @@ def validate_schedule(problem: Problem, assignments: list[Assignment]) -> tuple[
         errors.append({"code": "cohort_elective_conflict", "cohort": cohort_id, "day": day, "period": period, "message": "A full-cohort class cannot overlap that cohort's elective block."})
     for cohort_id, day, period in sorted(cohort_subgroup & cohort_elective):
         errors.append({"code": "subgroup_elective_conflict", "cohort": cohort_id, "day": day, "period": period, "message": "A batch lab cannot overlap that semester's elective block."})
+    cohort_periods = defaultdict(set)
+    for cohort_id, day, period in cohort_full | cohort_subgroup | cohort_elective:
+        cohort_periods[cohort_id, day].add(period)
+    for (cohort_id, day), occupied in cohort_periods.items():
+        blocked = sorted(period for blocked_day, period in problem.blocked_slots if blocked_day == day)
+        if not blocked:
+            continue
+        post_lunch_periods = [period for period in problem.periods if period > max(blocked)]
+        if not post_lunch_periods:
+            continue
+        first_after_lunch = min(post_lunch_periods)
+        has_morning_session = any(period < min(blocked) for period in occupied)
+        has_delayed_afternoon_session = any(period > first_after_lunch for period in occupied)
+        if has_delayed_afternoon_session and not has_morning_session and first_after_lunch not in occupied:
+            errors.append({
+                "code": "delayed_post_lunch_start",
+                "cohort": cohort_id,
+                "day": day,
+                "message": f"{cohort_id} starts late after lunch on {day}; its first afternoon class must begin in period {first_after_lunch}.",
+            })
     assignment_by_session = {a.session_id: a for a in assignments}
     parallel_groups = defaultdict(list)
     for session in problem.sessions:

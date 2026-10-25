@@ -252,3 +252,70 @@ def test_balanced_daily_cohort_load_is_preferred_when_both_schedules_are_compact
     assert balanced_metrics["cohort_daily_load_imbalance"] < uneven_metrics["cohort_daily_load_imbalance"]
     assert soft_cost(problem, balanced) < soft_cost(problem, uneven)
 
+
+def test_cohort_cannot_begin_the_day_one_period_late_after_lunch():
+    session = RequiredSession(
+        "late",
+        1,
+        0,
+        "LATE",
+        "theory",
+        1,
+        40,
+        (1,),
+        ("SEM-5",),
+        (1,),
+        fixed_day="Monday",
+        fixed_period=4,
+        cohort_id="SEM-5",
+    )
+    problem = Problem(
+        ["Monday"],
+        [0, 1, 2, 3, 4],
+        {("Monday", 2)},
+        {1: RoomResource(1, "R1", 60, "theory")},
+        {1: FacultyResource(1, "F1")},
+        [session],
+        [],
+    )
+    assignment = Assignment("late", 1, 0, "Monday", 4, 1, 1, (1,), ("SEM-5",))
+
+    valid, errors, _ = validate_schedule(problem, [assignment])
+    result = solve(problem)
+
+    assert not valid
+    assert any(error["code"] == "delayed_post_lunch_start" for error in errors)
+    assert result.status == "infeasible"
+
+
+def test_cohort_may_begin_immediately_after_lunch():
+    session = RequiredSession(
+        "after-lunch",
+        1,
+        0,
+        "ON-TIME",
+        "theory",
+        1,
+        40,
+        (1,),
+        ("SEM-5",),
+        (1,),
+        fixed_day="Monday",
+        fixed_period=3,
+        cohort_id="SEM-5",
+    )
+    problem = Problem(
+        ["Monday"],
+        [0, 1, 2, 3, 4],
+        {("Monday", 2)},
+        {1: RoomResource(1, "R1", 60, "theory")},
+        {1: FacultyResource(1, "F1")},
+        [session],
+        [],
+    )
+
+    result = solve(problem)
+
+    assert result.status in {"optimal", "feasible"}
+    assert result.assignments[0].start_period == 3
+
