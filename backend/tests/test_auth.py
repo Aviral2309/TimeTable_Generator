@@ -53,6 +53,12 @@ def test_student_cannot_pass_admin_role_check():
     assert error.value.status_code == 403
 
 
+def test_faculty_cannot_pass_admin_role_check():
+    dependency = require_roles("admin")
+    with pytest.raises(HTTPException) as error: dependency(User(email="f@sgsits.ac.in", name="Faculty", password_hash="x", role="faculty"))
+    assert error.value.status_code == 403
+
+
 def test_admin_can_create_room():
     db = session(); department = Department(code="EE", name="Electrical Engineering"); db.add(department); db.commit()
     admin = User(email="a@test.edu", name="Admin", password_hash="x", role="admin")

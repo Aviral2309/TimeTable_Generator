@@ -217,7 +217,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
   });
   const roleChoices: Array<{ role: User["role"]; label: string; detail: string; icon: React.ReactNode }> = [
     { role: "admin", label: "Administrator", detail: "Manage data, generate, validate and publish", icon: <ShieldCheck /> },
-    { role: "faculty", label: "Faculty", detail: "View timetable and submit availability", icon: <Users /> },
+    { role: "faculty", label: "Faculty", detail: "View and download the faculty timetable", icon: <Users /> },
     { role: "student", label: "Student", detail: "View and download the published timetable", icon: <GraduationCap /> },
   ];
   return (
@@ -329,7 +329,6 @@ const studentNav = [
 ] as const;
 const facultyNav = [
   ["My Timetable", "/timetable", CalendarDays],
-  ["My Availability", "/availability", CalendarClock],
   ["Faculty Directory", "/faculty", Users],
   ["Rooms & Labs", "/rooms", Building2],
   ["Download", "/download", Download],
@@ -409,7 +408,7 @@ function Shell({ user, logout }: { user: User; logout: () => void }) {
             </select> : <span className="term">{status.data?.active_year?.name || `${user.role} view`}</span>}
             {user.role === "admin" ? <span className={status.data?.ready_for_validation ? "status-dot" : "status-dot pending"}>
               {status.data?.ready_for_validation ? "Ready to validate" : "Setup in progress"}
-            </span> : <span className="status-dot">{user.role === "faculty" ? "Timetable & availability access" : "Read-only timetable access"}</span>}
+            </span> : <span className="status-dot">Read-only timetable access</span>}
           </div>
         </header>
         <Routes>
@@ -423,7 +422,7 @@ function Shell({ user, logout }: { user: User; logout: () => void }) {
             path="faculty"
             element={<MasterList resource="faculty" title="Faculty" user={user} />}
           />
-          <Route path="availability" element={user.role !== "student" ? <AvailabilityPage user={user} /> : <Navigate to="/" />} />
+          <Route path="availability" element={user.role === "admin" ? <AvailabilityPage user={user} /> : <Navigate to="/" />} />
           <Route
             path="rooms"
             element={
@@ -506,11 +505,10 @@ function Dashboard({ user }: { user: User }) {
         <div className="hero-card">
           <div>
             <h2>{user.role === "faculty" ? "Your teaching timetable" : "Your weekly class timetable"}</h2>
-            <p>{user.role === "faculty" ? "View or print your faculty-specific schedule and update your availability before generation." : "View and print your semester schedule. Student accounts cannot modify department data."}</p>
+            <p>{user.role === "faculty" ? "View or print your faculty-specific schedule. Ask the timetable administrator to record any availability change." : "View and print your semester schedule. Student accounts cannot modify department data."}</p>
             <NavLink className="primary button-link" to="/timetable">
               Open timetable
             </NavLink>
-            {user.role === "faculty" && <NavLink className="secondary button-link" to="/availability">Update availability</NavLink>}
           </div>
           <CalendarDays size={90} />
         </div>
@@ -2096,9 +2094,8 @@ function AvailabilityPage({ user }: { user: User }) {
   const optionsQ = useQuery({ queryKey: ["setup-options"], queryFn: setupOptions });
   const [resourceType, setResourceType] = useState<"faculty" | "room">("faculty");
   const [chosenId, setChosenId] = useState<number | null>(null);
-  const ownFacultyId = user.role === "faculty" ? user.faculty_id || null : null;
   const resources = resourceType === "faculty" ? optionsQ.data?.faculty || [] : optionsQ.data?.rooms || [];
-  const selectedId = ownFacultyId ?? chosenId ?? resources[0]?.id ?? null;
+  const selectedId = chosenId ?? resources[0]?.id ?? null;
   const availabilityQ = useQuery({
     queryKey: [resourceType, "availability", selectedId],
     queryFn: () => resourceType === "faculty" ? facultyAvailability(selectedId!) : roomAvailability(selectedId!),
@@ -2123,7 +2120,7 @@ function AvailabilityPage({ user }: { user: User }) {
   const toggle = (key: string) => setConstraints((current) => ({ ...current, [key]: current[key]?.available === false ? { available: true, note: "" } : { available: false, note: current[key]?.note || "" } }));
   const setNote = (key: string, note: string) => setConstraints((current) => ({ ...current, [key]: { available: false, note } }));
   const unavailableCount = Object.values(constraints).filter((item) => !item.available).length;
-  const canEdit = user.role === "admin" || (user.role === "faculty" && resourceType === "faculty" && selectedId === user.faculty_id);
+  const canEdit = user.role === "admin";
   return <section className="page">
     <PageTitle eyebrow="Written hard constraints" title="Faculty and room availability">
       {canEdit && <button className="primary" disabled={!selectedId || save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving…" : "Save availability"}</button>}
@@ -2131,10 +2128,10 @@ function AvailabilityPage({ user }: { user: User }) {
     <p className="lead">Unavailable periods are hard constraints. Add a written reason such as “department meeting” or “room occupied by another department”; the solver will never allocate that resource in those periods.</p>
     <div className="availability-type-tabs">
       <button className={resourceType === "faculty" ? "active" : ""} onClick={() => { setResourceType("faculty"); setChosenId(null); }}>Faculty</button>
-      {user.role === "admin" && <button className={resourceType === "room" ? "active" : ""} onClick={() => { setResourceType("room"); setChosenId(null); }}>Rooms & labs</button>}
+      <button className={resourceType === "room" ? "active" : ""} onClick={() => { setResourceType("room"); setChosenId(null); }}>Rooms & labs</button>
     </div>
     {!resources.length ? <EmptyState text={`Add ${resourceType} records before configuring availability.`} /> : <>
-      <div className="card availability-toolbar"><label>{resourceType === "faculty" ? "Teacher" : "Room / laboratory"}<select disabled={!!ownFacultyId} value={selectedId || ""} onChange={(event) => setChosenId(Number(event.target.value))}>{resources.filter((resource: any) => !ownFacultyId || resource.id === ownFacultyId).map((resource: any) => <option key={resource.id} value={resource.id}>{resourceType === "faculty" ? `${resource.faculty_code} · ${resource.name}` : `${resource.code} · ${resource.name}`}</option>)}</select></label><span>{unavailableCount} unavailable period{unavailableCount === 1 ? "" : "s"}</span></div>
+      <div className="card availability-toolbar"><label>{resourceType === "faculty" ? "Teacher" : "Room / laboratory"}<select value={selectedId || ""} onChange={(event) => setChosenId(Number(event.target.value))}>{resources.map((resource: any) => <option key={resource.id} value={resource.id}>{resourceType === "faculty" ? `${resource.faculty_code} · ${resource.name}` : `${resource.code} · ${resource.name}`}</option>)}</select></label><span>{unavailableCount} unavailable period{unavailableCount === 1 ? "" : "s"}</span></div>
       <div className="card table-card availability-grid"><table><thead><tr><th>Time</th>{days.map((day) => <th key={day}>{day}</th>)}</tr></thead><tbody>{periods.map((period: any) => <tr key={period.period_index}><th>{period.start_time}–{period.end_time}</th>{days.map((day) => {const slot = slots.find((item: any) => item.day === day && item.period_index === period.period_index); const key = `${day}:${period.period_index}`; const unavailable = constraints[key]?.available === false; return <td key={day} className={slot?.blocked ? "blocked-slot" : unavailable ? "unavailable-slot" : "available-slot"}>{slot?.blocked ? "Lunch" : <div className="availability-cell"><label className="slot-check"><input disabled={!canEdit} type="checkbox" checked={!unavailable} onChange={() => toggle(key)} /><span>{unavailable ? "Unavailable" : "Available"}</span></label>{unavailable && <input disabled={!canEdit} className="availability-note" placeholder="Written reason" value={constraints[key]?.note || ""} onChange={(event) => setNote(key, event.target.value)} />}</div>}</td>;})}</tr>)}</tbody></table></div>
     </>}
     {save.isSuccess && <div className="validation-ok"><ShieldCheck />Availability and written reasons saved as solver constraints.</div>}

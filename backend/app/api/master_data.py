@@ -45,16 +45,14 @@ def faculty_delete(item_id: int, db: Session = Depends(get_db), _: User = Depend
 
 
 @router.get("/faculty/{item_id}/availability")
-def faculty_availability(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "faculty", "student"))):
+def faculty_availability(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     if not db.get(Faculty, item_id): raise HTTPException(404, "Faculty record not found")
     items = db.scalars(select(FacultyAvailability).where(FacultyAvailability.faculty_id == item_id).order_by(FacultyAvailability.day, FacultyAvailability.period_index)).all()
     return {"items": items}
 
 
 @router.put("/faculty/{item_id}/availability")
-def replace_faculty_availability(item_id: int, body: list[FacultyAvailabilitySlot], db: Session = Depends(get_db), user: User = Depends(require_roles("admin", "faculty"))):
-    if user.role == "faculty" and user.faculty_id != item_id:
-        raise HTTPException(403, "Faculty may update only their own availability")
+def replace_faculty_availability(item_id: int, body: list[FacultyAvailabilitySlot], db: Session = Depends(get_db), user: User = Depends(require_roles("admin"))):
     if not db.get(Faculty, item_id): raise HTTPException(404, "Faculty record not found")
     configured = {(slot.day, slot.period_index) for slot in db.scalars(select(TimeSlot)).all()}
     invalid = [(slot.day, slot.period_index) for slot in body if (slot.day, slot.period_index) not in configured]
@@ -98,7 +96,7 @@ def room_delete(item_id: int, db: Session = Depends(get_db), _: User = Depends(r
 
 
 @router.get("/rooms/{item_id}/availability")
-def room_availability(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "faculty", "student"))):
+def room_availability(item_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     if not db.get(Room, item_id): raise HTTPException(404, "Room record not found")
     items = db.scalars(select(RoomAvailability).where(RoomAvailability.room_id == item_id).order_by(RoomAvailability.day, RoomAvailability.period_index)).all()
     return {"items": items}

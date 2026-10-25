@@ -25,7 +25,7 @@ The application now uses an admin-first workflow. A fresh installation contains 
 - Automated solver and API-service workflow tests
 - React 19 and TypeScript responsive administration interface
 - Secure role-based admin, faculty, and student workspaces
-- SGSITS-domain role accounts, admin-only master-data CRUD, faculty self-availability, and read-only student/faculty directories
+- SGSITS-domain role accounts, admin-only master-data, reservation and availability controls, and read-only student/faculty workspaces
 - Odd/Even term switching without deleting the other term or its timetable history
 - Minimum-disruption faculty/room rescheduling with before/after approval
 - Guided 12-step timetable preparation experience
