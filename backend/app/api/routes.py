@@ -2,8 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
+from contextlib import closing
+from datetime import UTC, datetime
+from pathlib import Path
 import csv
 import io
+import sqlite3
 from app.core.security import require_roles
 from app.db.session import get_db
 from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, GenerationRun, Institute, RescheduleEvent, Room, SemesterOffering, TimeSlot, Timetable, TimetableBackup, TimetableSession, User, ValidationReport
@@ -141,8 +145,16 @@ def timetable_delete(timetable_id: int, db: Session = Depends(get_db), _: User =
     table = db.get(Timetable, timetable_id)
     if not table:
         raise HTTPException(404, "Timetable version not found")
-    if table.status == "published":
-        raise HTTPException(409, "Published timetable cannot be deleted. Publish another version or archive this one first.")
+    bind = db.get_bind()
+    if bind.url.get_backend_name() == "sqlite" and bind.url.database and bind.url.database != ":memory:":
+        source = Path(bind.url.database).resolve()
+        if source.is_file():
+            backup_dir = source.parent / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+            target = backup_dir / f"pre-delete-timetable-v{table.version}-{stamp}.db"
+            with closing(sqlite3.connect(source)) as current, closing(sqlite3.connect(target)) as saved:
+                current.backup(saved)
     run = db.get(GenerationRun, table.generation_run_id)
     db.query(RescheduleEvent).filter(or_(
         RescheduleEvent.source_timetable_id == table.id,

@@ -107,18 +107,13 @@ def test_non_admins_can_read_only_published_timetable_versions():
     assert timetable_by_id(table.id, db, faculty)["id"] == table.id
 
 
-def test_admin_can_delete_old_draft_but_not_published_timetable():
+def test_admin_can_delete_draft_or_published_timetable():
     db, year, semester_ids = configured_problem()
     generate_problem(db, year.id, "cp_sat", 10, 42, semester_ids)
     table = db.scalar(select(Timetable).order_by(Timetable.id.desc()))
     admin = User(email="admin@sgsits.ac.in", name="Admin", password_hash="x", role="admin")
 
     table.status = "published"; db.commit()
-    with pytest.raises(HTTPException) as error:
-        timetable_delete(table.id, db, admin)
-    assert error.value.status_code == 409
-
-    table.status = "draft"; db.commit()
     timetable_delete(table.id, db, admin)
     assert db.get(Timetable, table.id) is None
     assert db.scalar(select(TimetableSession).where(TimetableSession.timetable_id == table.id)) is None

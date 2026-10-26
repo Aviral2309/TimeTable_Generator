@@ -111,6 +111,14 @@ function splitCapabilities(value: string) {
       return true;
     });
 }
+function formatIndiaDateTime(value: string) {
+  const normalized = /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`;
+  return `${new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "medium",
+    timeZone: "Asia/Kolkata",
+  }).format(new Date(normalized))} IST`;
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(storedUser);
@@ -1993,8 +2001,9 @@ function TimetablePage({ user }: { user: User }) {
     },
   });
   const confirmDeleteVersion = () => {
-    if (!q.data || q.data.status === "published") return;
-    if (window.confirm(`Delete timetable version ${q.data.version}? Its sessions, validation report, backup, and related rescheduling log will also be removed. This cannot be undone.`)) {
+    if (!q.data) return;
+    const publishedWarning = q.data.status === "published" ? " This is the published timetable: student and faculty views will have no current timetable until another version is published." : "";
+    if (window.confirm(`Delete timetable version ${q.data.version}?${publishedWarning} Its sessions, validation report, internal backup, and related rescheduling log will also be removed. A full recovery backup will be created automatically.`)) {
       deleteMutation.mutate();
     }
   };
@@ -2069,7 +2078,7 @@ function TimetablePage({ user }: { user: User }) {
             <option value="published">Published / achieved backup</option>
             <option value="archived">Archived</option>
           </select>}
-          {user.role === "admin" && selectedVersion !== 0 && q.data?.status !== "published" && <button className="secondary danger" disabled={deleteMutation.isPending} onClick={confirmDeleteVersion}><Trash2 size={17} />{deleteMutation.isPending ? "Deleting…" : "Delete version"}</button>}
+          {user.role === "admin" && selectedVersion !== 0 && q.data && <button className="secondary danger" disabled={deleteMutation.isPending} onClick={confirmDeleteVersion}><Trash2 size={17} />{deleteMutation.isPending ? "Deleting…" : "Delete version"}</button>}
         </div>
       </PageTitle>
       {deleteMutation.error && <div className="error">{errorText(deleteMutation.error)}</div>}
@@ -2078,7 +2087,7 @@ function TimetablePage({ user }: { user: User }) {
       ) : q.error ? (
         <EmptyState text="No generated timetable exists yet." />
       ) : (
-        <><div className="timetable-record-banner"><span>{q.data!.academic_year} · {q.data!.academic_term.toUpperCase()} term</span><strong>Version {q.data!.version} · {q.data!.status.toUpperCase()}</strong><small>{q.data!.created_at ? new Date(q.data!.created_at!).toLocaleString() : "Stored timetable record"}{user.role === "admin" ? currentBackup ? ` · Backup verified ${currentBackup.checksum.slice(0, 12)}…` : " · Legacy version (download backup unavailable)" : ""}</small></div>
+        <><div className="timetable-record-banner"><span>{q.data!.academic_year} · {q.data!.academic_term.toUpperCase()} term</span><strong>Version {q.data!.version} · {q.data!.status.toUpperCase()}</strong><small>{q.data!.created_at ? formatIndiaDateTime(q.data!.created_at!) : "Stored timetable record"}{user.role === "admin" ? currentBackup ? ` · Backup verified ${currentBackup.checksum.slice(0, 12)}…` : " · Legacy version (download backup unavailable)" : ""}</small></div>
         {validationQ.data && <div className={`card validation-report screen-only ${validationQ.data.valid ? "passed" : "failed"}`}>
           <div className="validation-report-head"><div>{validationQ.data.valid ? <ShieldCheck /> : <X />}<span><strong>{validationQ.data.valid ? "All hard constraints passed" : "Validation issues detected"}</strong><small>Independent report for version {validationQ.data.version} · {validationQ.data.scheduled_sessions} scheduled sessions</small></span></div><span className="badge">{validationQ.data.status}</span></div>
           <div className="validation-metrics">
