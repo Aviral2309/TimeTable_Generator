@@ -6,7 +6,7 @@
 - **Faculty:** read-only access to their faculty timetable, directories and downloads. Faculty report requested changes to the administrator.
 - **Student:** read-only access to the published timetable associated with the account's semester or batch group.
 
-Only SGSITS-domain accounts can be created. The administrator links each faculty login to one faculty record and each student login to a semester or batch group such as `SEM-3` or `SEM-3-B1`.
+Only SGSITS-domain accounts can be created. Faculty and students register themselves from the login page: faculty select their preloaded faculty record and verify its stored email; students select academic year, semester, and batch. Additional administrator registrations appear inactive in **User Access** until an existing administrator approves them.
 
 ## 2. Initial department setup
 
@@ -32,7 +32,7 @@ If generation fails, the Generate page shows exact preprocessing/solver diagnost
 
 ## 4. Accounts and passwords
 
-- Administrators create and edit accounts under **User Access**. Leaving the password field blank while editing preserves the existing password; entering a new password performs an administrator reset.
+- Administrators approve/deactivate accounts under **User Access** and can still create or reset an account when necessary. Leaving the password field blank while editing preserves the existing password.
 - Every signed-in user can change their own password under **My Account** after providing the current password.
 - Deactivate an account when temporary access should stop. The current administrator cannot deactivate or delete their own account.
 - Department data is not owned by an individual login. Changing or replacing an administrator account does not remove faculty, rooms, subjects or timetable history.

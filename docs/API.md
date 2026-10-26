@@ -7,6 +7,8 @@ Authenticated endpoints expect `Authorization: Bearer <token>`. Obtain the token
 ## Authentication and roles
 
 - `POST /api/auth/login`
+- `GET /api/auth/registration-options` (public faculty/year/semester/group choices)
+- `POST /api/auth/register` (self-registration; additional administrators require approval)
 - `GET /api/auth/me`
 - `POST /api/auth/change-password` changes only the authenticated user's password after verifying the current password.
 - Admin: generation, analytics, and master-data writes

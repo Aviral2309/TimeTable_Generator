@@ -26,10 +26,10 @@ Natural-language/LLM assistance is a possible future layer; it is not required b
 | Role | Access |
 | --- | --- |
 | Administrator | Full setup, CRUD, availability, reservations, account management, generation, validation, publication, rescheduling, analytics, backups, and restoration |
-| Faculty | Read-only access to published faculty timetable, directories, downloads, and personal password change |
-| Student | Read-only access to the published timetable associated with the account's semester/batch group, directories, downloads, and personal password change |
+| Faculty | Self-register against an existing faculty record, then read-only access to their published faculty timetable, directories, downloads, and password change |
+| Student | Self-register by academic year, semester, and batch, then read-only access to the matching published timetable, directories, downloads, and password change |
 
-Faculty and students cannot modify timetable or department data. Requested changes are given to the administrator, who records them before generation or uses the rescheduling workflow afterward. Administrator-created faculty and student accounts must use the `@sgsits.ac.in` domain.
+Faculty and students cannot modify timetable or department data. They create their own `@sgsits.ac.in` accounts from the login page, so the administrator does not enter their passwords. A faculty member must select the matching preloaded faculty record and use its stored email. Students select their academic year, semester, and batch. Additional administrator registrations stay inactive until an existing administrator enables them in **User Access**.
 
 ## Scheduling rules
 

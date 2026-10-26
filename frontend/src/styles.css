@@ -176,6 +176,7 @@ h1 {
 .role-card div { display:grid; gap:3px; }
 .role-card small { color:var(--muted); font-weight:500; }
 .role-back { padding:0; margin-bottom:18px; color:var(--blue); background:transparent; border:0; }
+.auth-switch{width:100%;margin-top:12px;padding:10px;border:1px solid var(--blue);border-radius:9px;background:#fff;color:var(--blue);font-weight:700;cursor:pointer}.registration-note{margin:0 0 12px;padding:10px 12px;border-radius:8px;background:#eef6fa;color:var(--muted);font-size:.82rem}.login-panel .success{padding:13px;border-radius:9px;background:#eafaf5;color:#187256}.login-panel select{width:100%}
 .login-panel label,
 .wizard-body label,
 .card label {

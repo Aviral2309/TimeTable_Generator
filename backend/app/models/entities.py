@@ -31,6 +31,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(300))
     role: Mapped[str] = mapped_column(String(20), index=True)
     faculty_id: Mapped[int | None] = mapped_column(ForeignKey("faculty.id"), unique=True)
+    academic_year_id: Mapped[int | None] = mapped_column(ForeignKey("academic_years.id"), index=True)
     student_group_id: Mapped[str | None] = mapped_column(String(80))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 

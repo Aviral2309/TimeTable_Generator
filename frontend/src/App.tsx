@@ -43,6 +43,8 @@ import {
   restoreDatabase,
   list,
   login,
+  registerAccount,
+  registrationOptions,
   loadDemoData,
   offerings,
   previewReschedule,
@@ -215,6 +217,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState("");
   const [role, setRole] = useState<User["role"] | null>(null);
+  const [creating, setCreating] = useState(false);
   const mutation = useMutation({
     mutationFn: () => login(email, password, role!),
     onSuccess: (d) => saveSession(d, onLogin),
@@ -240,7 +243,7 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
             <ChevronRight size={18} />
           </button>)}
         </div>
-      </div> : <form
+      </div> : creating ? <RegisterAccount role={role} onLogin={onLogin} onBack={() => setCreating(false)} /> : <form
         onSubmit={(e) => {
           e.preventDefault();
           mutation.mutate();
@@ -274,9 +277,66 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
           {mutation.isPending ? "Signing in…" : "Sign in"}
           <ChevronRight size={18} />
         </button>
+        <button type="button" className="auth-switch" onClick={() => { mutation.reset(); setCreating(true); }}>
+          New {role}? Create your own account
+        </button>
       </form>}
     </AuthLayout>
   );
+}
+
+function RegisterAccount({ role, onLogin, onBack }: { role: User["role"]; onLogin: (u: User) => void; onBack: () => void }) {
+  const options = useQuery({ queryKey: ["registration-options"], queryFn: registrationOptions });
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", faculty_id: "", academic_year_id: "", semester: "", student_group_id: "" });
+  const [facultySearch, setFacultySearch] = useState("");
+  const [message, setMessage] = useState("");
+  const years = options.data?.academic_years || [];
+  const year = years.find((item) => String(item.id) === form.academic_year_id);
+  const semestersForYear = year?.semesters || [];
+  const semester = semestersForYear.find((item) => String(item.semester_number) === form.semester);
+  const faculty = (options.data?.faculty || []).filter((item) => `${item.name} ${item.faculty_code}`.toLowerCase().includes(facultySearch.toLowerCase()));
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (form.password !== form.confirm) throw new Error("Passwords do not match");
+      return registerAccount({
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        role,
+        faculty_id: role === "faculty" ? Number(form.faculty_id) : null,
+        academic_year_id: role === "student" ? Number(form.academic_year_id) : null,
+        student_group_id: role === "student" ? form.student_group_id : null,
+      });
+    },
+    onSuccess: (data) => {
+      if (data.access_token && data.user) saveSession({ access_token: data.access_token, user: data.user }, onLogin);
+      else setMessage(data.message || "Account request submitted.");
+    },
+  });
+  if (message) return <div><button type="button" className="role-back" onClick={onBack}>← Back to sign in</button><h2>Request received</h2><div className="success">{message}</div></div>;
+  return <form onSubmit={(event) => { event.preventDefault(); mutation.mutate(); }}>
+    <button type="button" className="role-back" onClick={onBack}>← Back to sign in</button>
+    <p className="eyebrow">{role} registration</p>
+    <h2>Create your account</h2>
+    {role === "faculty" && <>
+      <label>Search your name or faculty code<input value={facultySearch} onChange={(event) => setFacultySearch(event.target.value)} placeholder="Start typing…" /></label>
+      <label>Select your faculty record<select required value={form.faculty_id} onChange={(event) => setForm({ ...form, faculty_id: event.target.value })}><option value="">Choose yourself</option>{faculty.map((item) => <option key={item.id} value={item.id}>{item.faculty_code} · {item.name}</option>)}</select></label>
+      <p className="registration-note">Use the exact SGSITS email already stored against your faculty record.</p>
+    </>}
+    {role === "student" && <>
+      <label>Academic year<select required value={form.academic_year_id} onChange={(event) => setForm({ ...form, academic_year_id: event.target.value, semester: "", student_group_id: "" })}><option value="">Choose academic year</option>{years.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.term_type} semester</option>)}</select></label>
+      <label>Semester<select required value={form.semester} disabled={!year} onChange={(event) => setForm({ ...form, semester: event.target.value, student_group_id: "" })}><option value="">Choose semester</option>{semestersForYear.map((item) => <option key={item.semester_number} value={item.semester_number}>Semester {item.semester_number}</option>)}</select></label>
+      <label>Batch / group<select required value={form.student_group_id} disabled={!semester} onChange={(event) => setForm({ ...form, student_group_id: event.target.value })}><option value="">Choose batch</option>{semester?.groups.map((group) => <option key={group} value={group}>{group}</option>)}</select></label>
+    </>}
+    {role === "admin" && <p className="registration-note">For security, an existing administrator must approve additional administrator accounts.</p>}
+    <label>Full name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+    <label>SGSITS email<input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="name@sgsits.ac.in" /></label>
+    <label>Create password<input required minLength={8} type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
+    <label>Confirm password<input required minLength={8} type="password" value={form.confirm} onChange={(event) => setForm({ ...form, confirm: event.target.value })} /></label>
+    {options.error && <div className="error">{errorText(options.error)}</div>}
+    {mutation.error && <div className="error">{errorText(mutation.error)}</div>}
+    <button className="primary" disabled={mutation.isPending || options.isLoading}>{mutation.isPending ? "Creating…" : "Create account"}<ChevronRight size={18} /></button>
+  </form>;
 }
 function AuthLayout({
   eyebrow,
@@ -2255,13 +2315,14 @@ function MasterList({ resource, title, user }: { resource: string; title: string
     : resource === "rooms"
       ? ["code", "name", "department_id", "capacity", "room_type", "features", "concurrent_capacity"]
       : resource === "users"
-        ? ["name", "email", "role", "faculty_id", "student_group_id", "active"]
+        ? ["name", "email", "role", "faculty_id", "academic_year_id", "student_group_id", "active"]
       : ["day", "start_period", "duration_periods", "room_id", "faculty_id", "participant_group_id", "description"];
   const columnLabel = (key: string) => ({home_department_id:"department code",department_id:"department code",features:"supported subjects / capabilities",concurrent_capacity:"simultaneous groups",start_period:"start period",duration_periods:"duration",room_id:"room",faculty_id:"faculty",participant_group_id:"student group"} as Record<string,string>)[key] || key.replaceAll("_", " ");
   const cellValue = (key: string, value: any) => {
     if (["home_department_id", "department_id"].includes(key)) return options.data?.departments.find((department: any) => department.id === value)?.code || "—";
     if (key === "room_id") return options.data?.rooms.find((room: any) => room.id === value)?.code || "—";
     if (key === "faculty_id") return options.data?.faculty.find((faculty: any) => faculty.id === value)?.faculty_code || "—";
+    if (key === "academic_year_id") return options.data?.academic_years.find((year: any) => year.id === value)?.name || "—";
     if (key === "active") return value ? "Active" : "Inactive";
     return Array.isArray(value) ? value.join(", ") || "—" : String(value ?? "—");
   };
@@ -2364,6 +2425,7 @@ function CreateForm({
               password: "",
               role: "student",
               faculty_id: null,
+              academic_year_id: year?.id,
               student_group_id: options.student_groups?.[0] || "",
               active: true,
             }
@@ -2453,6 +2515,7 @@ function CreateForm({
             <label className="checkbox"><input type="checkbox" checked={!!form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.checked })} /> Account enabled</label>
           ) : key === "academic_year_id" ? (
             <select
+              disabled={resource === "users" && form.role !== "student"}
               value={form[key]}
               onChange={(e) => updateField(key, e.target.value)}
             >

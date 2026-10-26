@@ -68,7 +68,8 @@ def _timetable_payload(table: Timetable, db: Session, user: User):
 def latest_timetable(db: Session = Depends(get_db), user: User = Depends(require_roles("admin", "faculty", "student"))):
     active_year = db.scalar(select(AcademicYear).where(AcademicYear.active.is_(True)).order_by(desc(AcademicYear.id)).limit(1))
     query = select(Timetable)
-    if active_year: query = query.where(Timetable.academic_year_id == active_year.id)
+    target_year_id = user.academic_year_id if user.role == "student" and user.academic_year_id else (active_year.id if active_year else None)
+    if target_year_id: query = query.where(Timetable.academic_year_id == target_year_id)
     if user.role != "admin": query = query.where(Timetable.status == "published")
     table = db.scalar(query.order_by(desc(Timetable.version), desc(Timetable.id)).limit(1))
     if not table: raise HTTPException(404, "No generated timetable exists for the active academic term")
@@ -78,6 +79,8 @@ def latest_timetable(db: Session = Depends(get_db), user: User = Depends(require
 @router.get("/timetables")
 def timetable_history(academic_year_id: int | None = None, db: Session = Depends(get_db), user: User = Depends(require_roles("admin", "faculty", "student"))):
     query = select(Timetable)
+    if user.role == "student" and user.academic_year_id:
+        academic_year_id = user.academic_year_id
     if academic_year_id: query = query.where(Timetable.academic_year_id == academic_year_id)
     if user.role != "admin": query = query.where(Timetable.status == "published")
     tables = db.scalars(query.order_by(desc(Timetable.id))).all()
@@ -94,6 +97,8 @@ def timetable_by_id(timetable_id: int, db: Session = Depends(get_db), user: User
     if not table: raise HTTPException(404, "Timetable version not found")
     if user.role != "admin" and table.status != "published":
         raise HTTPException(403, "This timetable version has not been published")
+    if user.role == "student" and user.academic_year_id and table.academic_year_id != user.academic_year_id:
+        raise HTTPException(403, "This timetable is outside your selected academic year")
     return _timetable_payload(table, db, user)
 
 
@@ -103,6 +108,8 @@ def timetable_validation(timetable_id: int, db: Session = Depends(get_db), user:
     if not table: raise HTTPException(404, "Timetable version not found")
     if user.role != "admin" and table.status != "published":
         raise HTTPException(403, "This timetable version has not been published")
+    if user.role == "student" and user.academic_year_id and table.academic_year_id != user.academic_year_id:
+        raise HTTPException(403, "This timetable is outside your selected academic year")
     run = db.get(GenerationRun, table.generation_run_id)
     report = db.scalar(select(ValidationReport).where(ValidationReport.generation_run_id == table.generation_run_id).order_by(desc(ValidationReport.id)).limit(1))
     if not report: raise HTTPException(404, "Validation report is unavailable for this legacy timetable")

@@ -4,7 +4,9 @@ export type User = {
   name: string;
   role: "admin" | "faculty" | "student";
   faculty_id?: number;
+  academic_year_id?: number;
   student_group_id?: string;
+  active?: boolean;
 };
 export type Session = {
   id: number;
@@ -150,6 +152,16 @@ export const login = (email: string, password: string, role: User["role"]) =>
   request<{ access_token: string; user: User }>("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password, role }),
+  });
+export type RegistrationOptions = {
+  faculty: Array<{ id: number; faculty_code: string; name: string }>;
+  academic_years: Array<{ id: number; name: string; term_type: "odd" | "even"; semesters: Array<{ semester_number: number; groups: string[] }> }>;
+};
+export const registrationOptions = () => request<RegistrationOptions>("/auth/registration-options");
+export const registerAccount = (data: Record<string, unknown>) =>
+  request<{ pending_approval: boolean; message?: string; access_token?: string; user?: User }>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify(data),
   });
 export const changePassword = (currentPassword: string, newPassword: string) =>
   request<{ message: string }>("/auth/change-password", {

@@ -3,12 +3,12 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from app.api.auth import change_password, login
+from app.api.auth import change_password, login, self_register
 from app.api.master_data import room_create
 from app.core.security import decode_token, hash_password, require_roles, verify_password
 from app.db.session import Base
-from app.models.entities import Department, Room, User
-from app.schemas.auth import LoginRequest, PasswordChangeRequest, UserCreate
+from app.models.entities import AcademicYear, Department, Faculty, Room, SemesterOffering, User
+from app.schemas.auth import LoginRequest, PasswordChangeRequest, SelfRegistrationRequest, UserCreate
 from app.schemas.master_data import RoomCreate
 
 
@@ -69,8 +69,35 @@ def test_admin_can_create_room():
 def test_new_role_accounts_require_sgsits_email_domain():
     with pytest.raises(ValueError):
         UserCreate(name="Student", email="student@gmail.com", password="secret123", role="student", student_group_id="SEM-3")
-    account = UserCreate(name="Student", email="student@sgsits.ac.in", password="secret123", role="student", student_group_id="SEM-3")
+    account = UserCreate(name="Student", email="student@sgsits.ac.in", password="secret123", role="student", academic_year_id=1, student_group_id="SEM-3")
     assert str(account.email) == "student@sgsits.ac.in"
+
+
+def test_faculty_can_self_register_against_existing_record():
+    db = session(); department = Department(code="EE", name="Electrical Engineering"); db.add(department); db.flush()
+    faculty = Faculty(faculty_code="EE01", name="Dr Faculty", email="faculty@sgsits.ac.in", home_department_id=department.id)
+    db.add(faculty); db.commit()
+    result = self_register(SelfRegistrationRequest(name="Ignored", email=faculty.email, password="secret123", role="faculty", faculty_id=faculty.id), db)
+    assert result["pending_approval"] is False
+    assert result["user"].faculty_id == faculty.id
+    assert result["user"].name == faculty.name
+
+
+def test_student_can_self_register_for_year_and_batch():
+    db = session(); department = Department(code="EE", name="Electrical Engineering"); year = AcademicYear(name="2026-27", term_type="odd")
+    db.add_all([department, year]); db.flush()
+    db.add(SemesterOffering(academic_year_id=year.id, department_id=department.id, semester_number=3, strength=60)); db.commit()
+    result = self_register(SelfRegistrationRequest(name="Student", email="student@sgsits.ac.in", password="secret123", role="student", academic_year_id=year.id, student_group_id="SEM-3"), db)
+    assert result["pending_approval"] is False
+    assert result["user"].academic_year_id == year.id
+    assert result["user"].student_group_id == "SEM-3"
+
+
+def test_additional_admin_registration_requires_approval():
+    db = session(); db.add(User(email="owner@sgsits.ac.in", name="Owner", password_hash=hash_password("secret123"), role="admin", active=True)); db.commit()
+    result = self_register(SelfRegistrationRequest(name="New Admin", email="newadmin@sgsits.ac.in", password="secret123", role="admin"), db)
+    assert result["pending_approval"] is True
+    assert db.query(User).filter_by(email="newadmin@sgsits.ac.in").one().active is False
 
 
 def test_authenticated_user_can_change_only_with_current_password():
