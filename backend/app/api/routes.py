@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 import csv
 import io
 from app.core.security import require_roles
 from app.db.session import get_db
-from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, GenerationRun, Institute, Room, SemesterOffering, TimeSlot, Timetable, TimetableBackup, TimetableSession, User, ValidationReport
+from app.models.entities import AcademicYear, CourseOffering, Department, Faculty, GenerationRun, Institute, RescheduleEvent, Room, SemesterOffering, TimeSlot, Timetable, TimetableBackup, TimetableSession, User, ValidationReport
 from app.schemas.generation import GenerationRequest, GenerationResponse, TimetableStatusRequest
 from app.services.generation import generate_problem
 
@@ -134,6 +134,28 @@ def timetable_status(timetable_id: int, body: TimetableStatusRequest, db: Sessio
     table.status = body.status
     db.commit(); db.refresh(table)
     return {"id": table.id, "version": table.version, "status": table.status}
+
+
+@router.delete("/timetables/{timetable_id}", status_code=204)
+def timetable_delete(timetable_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    table = db.get(Timetable, timetable_id)
+    if not table:
+        raise HTTPException(404, "Timetable version not found")
+    if table.status == "published":
+        raise HTTPException(409, "Published timetable cannot be deleted. Publish another version or archive this one first.")
+    run = db.get(GenerationRun, table.generation_run_id)
+    db.query(RescheduleEvent).filter(or_(
+        RescheduleEvent.source_timetable_id == table.id,
+        RescheduleEvent.result_timetable_id == table.id,
+    )).delete(synchronize_session=False)
+    db.query(TimetableBackup).filter(TimetableBackup.timetable_id == table.id).delete(synchronize_session=False)
+    db.delete(table)
+    db.flush()
+    db.query(ValidationReport).filter(ValidationReport.generation_run_id == table.generation_run_id).delete(synchronize_session=False)
+    if run:
+        db.delete(run)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/timetable-backups")

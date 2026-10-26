@@ -196,6 +196,8 @@ export const setTimetableStatus = (id: number, status: "draft" | "published" | "
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
+export const deleteTimetable = (id: number) =>
+  request<void>(`/timetables/${id}`, { method: "DELETE" });
 export const timetableBackups = () =>
   request<{ items: any[] }>("/timetable-backups");
 export const timetableBackup = (id: number) =>

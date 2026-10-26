@@ -38,6 +38,7 @@ import {
   bootstrapStatus,
   changePassword,
   create,
+  deleteTimetable,
   createTermCohorts,
   downloadDatabase,
   restoreDatabase,
@@ -1979,6 +1980,24 @@ function TimetablePage({ user }: { user: User }) {
       await Promise.all([qc.invalidateQueries({ queryKey: ["timetable"] }), qc.invalidateQueries({ queryKey: ["timetable-history"] })]);
     },
   });
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteTimetable(q.data!.id),
+    onSuccess: async () => {
+      setSelectedVersion(0);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["timetable"] }),
+        qc.invalidateQueries({ queryKey: ["timetable-history"] }),
+        qc.invalidateQueries({ queryKey: ["timetable-backups"] }),
+        qc.invalidateQueries({ queryKey: ["timetable-validation"] }),
+      ]);
+    },
+  });
+  const confirmDeleteVersion = () => {
+    if (!q.data || q.data.status === "published") return;
+    if (window.confirm(`Delete timetable version ${q.data.version}? Its sessions, validation report, backup, and related rescheduling log will also be removed. This cannot be undone.`)) {
+      deleteMutation.mutate();
+    }
+  };
   const [semester, setSemester] = useState<number | 0>(0);
   const semesterNumbers = useMemo(
     () =>
@@ -2050,8 +2069,10 @@ function TimetablePage({ user }: { user: User }) {
             <option value="published">Published / achieved backup</option>
             <option value="archived">Archived</option>
           </select>}
+          {user.role === "admin" && selectedVersion !== 0 && q.data?.status !== "published" && <button className="secondary danger" disabled={deleteMutation.isPending} onClick={confirmDeleteVersion}><Trash2 size={17} />{deleteMutation.isPending ? "Deleting…" : "Delete version"}</button>}
         </div>
       </PageTitle>
+      {deleteMutation.error && <div className="error">{errorText(deleteMutation.error)}</div>}
       {q.isLoading ? (
         <div className="loading">Loading timetable…</div>
       ) : q.error ? (
