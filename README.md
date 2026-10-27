@@ -171,6 +171,8 @@ Vite proxies `/api` requests to `http://127.0.0.1:8000`. Set `VITE_API_TARGET` b
 
 On an empty database, the application asks for the first administrator account. The administrator should then complete **Start Setup** in this order:
 
+For a normal fresh clone, the repository automatically copies `starter/sgsits-department-starter.db` to `timetable.db` on first backend startup. This supplies the current sanitized SGSITS department records and timetable history while still asking the recipient to create their own first administrator. Set `INSTALL_STARTER_DATABASE=false` before first startup when an entirely blank installation is required.
+
 1. Institute and department.
 2. Academic year and Odd/Even term.
 3. Working days, periods, and manually selected lunch period.
@@ -218,6 +220,8 @@ Contains all operational data, including login accounts and password hashes. Sto
 ### Starter database
 
 Retains department master data, terms, subjects, availability, timetable history, and other reusable records, but removes all login accounts. A receiving department creates its own first administrator. Changing the administrator does not remove the department data.
+
+The repository also carries a sanitized copy at `starter/sgsits-department-starter.db`. It is installed automatically only when the configured local SQLite database does not yet exist. Existing databases are never overwritten.
 
 ### Timetable JSON snapshot
 

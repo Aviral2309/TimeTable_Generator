@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "SGSITS Academic Timetable API"
     database_url: str = "sqlite:///./timetable.db"
+    install_starter_database: bool = True
     secret_key: str = "development-only-change-me"
     cors_origins: str = "http://localhost:5173"
     solver_time_limit_seconds: float = 30.0
