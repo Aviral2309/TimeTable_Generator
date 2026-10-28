@@ -21,6 +21,7 @@ class FacultyCreate(BaseModel):
     weekly_limit: int = Field(18, ge=1, le=40)
     daily_limit: int = Field(6, ge=1, le=8)
     max_consecutive: int = Field(3, ge=1, le=8)
+    active: bool = True
 
     @field_validator("email")
     @classmethod

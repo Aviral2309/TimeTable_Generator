@@ -75,6 +75,14 @@ export type ReschedulePlan = {
   }>;
   diagnostics: Array<{ code?: string; message?: string }>;
   metrics: Record<string, number>;
+  refinement?: {
+    strategy: string;
+    minimum_changes: number;
+    change_budget: number;
+    best_changes: number;
+    initial_cost: number;
+    best_cost: number;
+  } | null;
 };
 export type SetupStatus = {
   counts: Record<string, number>;

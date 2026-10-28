@@ -49,6 +49,11 @@ def test_dynamic_rescheduling_moves_the_affected_class_and_preserves_validity():
     assert proposal["moved_sessions"] >= 1
     affected = set(proposal["affected_session_ids"])
     assert any(change["session_id"] in affected for change in proposal["changes"])
+    assert proposal["refinement"]["best_changes"] <= proposal["refinement"]["change_budget"]
+    assert proposal["refinement"]["best_combined_cost"] <= (
+        proposal["refinement"]["initial_cost"]
+        + proposal["refinement"]["minimum_changes"] * proposal["refinement"]["change_cost"]
+    )
 
 
 def test_saved_timetable_can_be_reused_as_a_valid_quality_warm_start():

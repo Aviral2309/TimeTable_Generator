@@ -18,6 +18,7 @@ from app.models.entities import (
     ValidationReport,
 )
 from app.schemas.rescheduling import RescheduleRequest
+from app.scheduling.annealing import refine_with_change_budget
 from app.scheduling.database_problem import build_database_problem
 from app.scheduling.domain import Assignment, ResourceReservation
 from app.scheduling.solver import solve
@@ -157,6 +158,16 @@ def plan_reschedule(db: Session, request: RescheduleRequest) -> dict:
         }
     result = solve(disrupted_problem, request.time_limit_seconds, request.random_seed, baseline=current, change_penalty=CHANGE_PENALTY)
     proposed = result.assignments
+    refinement = None
+    if proposed and result.status in {"optimal", "feasible"}:
+        # The solver first establishes the minimum-disruption move count.
+        # Compare several quality refinements inside a small bounded expansion
+        # so a nominal one-class repair does not introduce avoidable gaps.
+        candidates = [
+            refine_with_change_budget(disrupted_problem, proposed, current, 8000, request.random_seed + offset)
+            for offset in range(3)
+        ]
+        proposed, refinement = min(candidates, key=lambda item: item[1]["best_combined_cost"])
     valid, errors, metrics = validate_schedule(disrupted_problem, proposed) if proposed else (False, [], {})
     diagnostics = [*result.diagnostics, *errors]
     if not proposed:
@@ -181,6 +192,7 @@ def plan_reschedule(db: Session, request: RescheduleRequest) -> dict:
         "runtime_seconds": perf_counter() - started,
         "problem": disrupted_problem,
         "solver_objective": result.objective,
+        "refinement": refinement,
     }
 
 
@@ -202,7 +214,12 @@ def apply_reschedule(db: Session, request: RescheduleRequest, user_id: int | Non
         academic_year_id=source.academic_year_id,
         status=plan["status"],
         solver_mode="dynamic_reschedule",
-        weights={**plan["problem"].weights, "change_penalty": CHANGE_PENALTY},
+        weights={
+            **plan["problem"].weights,
+            "change_penalty": CHANGE_PENALTY,
+            "reschedule_change_budget": plan["refinement"]["change_budget"] if plan["refinement"] else 0,
+            "reschedule_change_cost": plan["refinement"]["change_cost"] if plan["refinement"] else 0,
+        },
         objective_value=plan["solver_objective"],
         runtime_seconds=plan["runtime_seconds"],
         diagnostics=plan["diagnostics"],

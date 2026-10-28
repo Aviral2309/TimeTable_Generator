@@ -55,6 +55,10 @@ def test_admin_can_create_update_and_delete_operational_records():
     faculty = faculty_create(faculty_body, db, actor)
     faculty = faculty_update(faculty.id, faculty_body.model_copy(update={"name": "Teacher Updated"}), db, actor)
     assert faculty.name == "Teacher Updated"
+    faculty = faculty_update(faculty.id, faculty_body.model_copy(update={"name": "Teacher Updated", "active": False}), db, actor)
+    assert faculty.active is False
+    faculty = faculty_update(faculty.id, faculty_body.model_copy(update={"name": "Teacher Updated", "active": True}), db, actor)
+    assert faculty.active is True
     room_body = RoomCreate(code="R1", name="Room One", department_id=department.id, capacity=70, room_type="theory", features=["projector"])
     room = room_create(room_body, db, actor)
     room = room_update(room.id, room_body.model_copy(update={"name": "Room Updated"}), db, actor)

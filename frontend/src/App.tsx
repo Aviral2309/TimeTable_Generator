@@ -1868,8 +1868,8 @@ function ReschedulePage() {
   const canPreview = !!data && !!form.resource_id && form.reason.trim().length >= 3;
   return (
     <section className="page">
-      <PageTitle eyebrow="Minimum-disruption engine" title="Dynamic rescheduling" />
-      <p className="lead">Temporarily block a teacher or room, preview the smallest valid set of timetable changes, and create a new version only after approval.</p>
+      <PageTitle eyebrow="Quality-preserving change engine" title="Dynamic rescheduling" />
+      <p className="lead">Temporarily block a teacher or room, then find a small bounded set of valid changes without accepting avoidable student gaps. A new version is created only after approval.</p>
       <div className="reschedule-layout">
         <div className="card reschedule-form">
           <h3>Report a disruption</h3>
@@ -1921,7 +1921,7 @@ function ReschedulePage() {
             <textarea rows={3} placeholder="Example: University examination duty" value={form.reason} onChange={(event) => change({ reason: event.target.value })} />
           </label>
           <button className="primary wide" disabled={!canPreview || preview.isPending} onClick={() => preview.mutate(requestBody())}>
-            {preview.isPending ? "Finding the smallest valid change…" : "Preview rescheduling"}
+            {preview.isPending ? "Optimizing a valid low-gap alternative…" : "Preview rescheduling"}
             <RefreshCw size={17} />
           </button>
           {preview.error && <div className="error">{errorText(preview.error)}</div>}
@@ -1934,6 +1934,12 @@ function ReschedulePage() {
               <ShieldCheck />
               <div><strong>{plan.valid ? "VALID ALTERNATIVE" : "NO VALID ALTERNATIVE"}</strong><span>{plan.resource_name} · {plan.affected_sessions} affected · {plan.moved_sessions} moved</span></div>
             </div>
+            {plan.valid && <div className="validation-metrics reschedule-quality">
+              <span><b>{plan.metrics.student_gaps ?? 0}</b> student gaps</span>
+              <span><b>{plan.metrics.cohort_gaps ?? 0}</b> cohort gaps</span>
+              <span><b>{plan.metrics.faculty_gaps ?? 0}</b> faculty gaps</span>
+              <span><b>{plan.metrics.student_room_changes ?? 0}</b> room changes</span>
+            </div>}
             {!!plan.changes.length && <div className="change-list">
               {plan.changes.map((item) => <article key={item.session_id} className="change-row">
                 <div><span className="semester-chip">Sem {roman(item.semester_number)}</span><strong>{item.course_code} · {item.course_name}</strong><small>{item.participant_group_ids.join(", ")}</small></div>
@@ -2078,7 +2084,7 @@ function TimetablePage({ user }: { user: User }) {
             <option value="published">Published / achieved backup</option>
             <option value="archived">Archived</option>
           </select>}
-          {user.role === "admin" && selectedVersion !== 0 && q.data && <button className="secondary danger" disabled={deleteMutation.isPending} onClick={confirmDeleteVersion}><Trash2 size={17} />{deleteMutation.isPending ? "Deleting…" : "Delete version"}</button>}
+          {user.role === "admin" && q.data && <button className="secondary danger" disabled={deleteMutation.isPending} onClick={confirmDeleteVersion}><Trash2 size={17} />{deleteMutation.isPending ? "Deleting…" : `Delete v${q.data.version}`}</button>}
         </div>
       </PageTitle>
       {deleteMutation.error && <div className="error">{errorText(deleteMutation.error)}</div>}
@@ -2341,7 +2347,7 @@ function MasterList({ resource, title, user }: { resource: string; title: string
         ? options.data?.departments.length
         : options.data?.academic_years.length && options.data?.rooms.length;
   const columns = resource === "faculty"
-    ? ["faculty_code", "name", "email", "home_department_id", "weekly_limit", "daily_limit", "max_consecutive"]
+    ? ["faculty_code", "name", "email", "home_department_id", "weekly_limit", "daily_limit", "max_consecutive", "active"]
     : resource === "rooms"
       ? ["code", "name", "department_id", "capacity", "room_type", "features", "concurrent_capacity"]
       : resource === "users"
@@ -2437,6 +2443,7 @@ function CreateForm({
           weekly_limit: 18,
           daily_limit: 6,
           max_consecutive: 3,
+          active: true,
         }
       : resource === "rooms"
         ? {
@@ -2542,7 +2549,7 @@ function CreateForm({
               <option value="student">Student</option>
             </select>
           ) : key === "active" ? (
-            <label className="checkbox"><input type="checkbox" checked={!!form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.checked })} /> Account enabled</label>
+            <label className="checkbox"><input type="checkbox" checked={!!form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.checked })} /> {resource === "faculty" ? "Faculty active" : "Account enabled"}</label>
           ) : key === "academic_year_id" ? (
             <select
               disabled={resource === "users" && form.role !== "student"}
